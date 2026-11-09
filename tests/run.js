@@ -101,4 +101,25 @@ test('eczema child gets allergy track', function () {
   assert.ok(ids.indexOf('allergy') >= 0);
 });
 
+test('vaccine due dates are whole days and timezone-free', function () {
+  assert.strictEqual(E.vaccineDue('2026-01-01', 0), '2026-01-01');
+  assert.strictEqual(E.vaccineDue('2026-01-01', 2), '2026-03-03');
+  assert.strictEqual(E.nextVaccine({ dob: '2026-01-01' }, W.VACCINES, {}, '2026-01-02').due, '2026-01-01');
+});
+
+test('import migration cleans unsafe ids and non-numeric values, and upgrades v1', function () {
+  var sctx = { window: { localStorage: { getItem: function () { return null; } } } };
+  vm.createContext(sctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js/store.js'), 'utf8'), sctx);
+  var St = sctx.window.Store;
+  var bad = St.migrate({ v: 1, mother: { age: '30', conditions: [] }, children: [{ id: 'a"><img src=x>', name: 'x', gaWeeks: '<img src=x onerror=alert(1)>' }],
+    logs: [{ id: '1<b>', childId: 'a"><img src=x>', type: 'temp', ts: '5', c: '<script>' }], growth: [{ id: 'g', childId: 'a', w: '<img>' }] });
+  assert.strictEqual(bad.children[0].id, 'aimgsrcx');
+  assert.strictEqual(bad.children[0].gaWeeks, 40);
+  assert.strictEqual(bad.logs[0].c, null);
+  assert.strictEqual(bad.growth[0].w, null);
+  assert.strictEqual(bad.v, 2);
+  assert.ok(bad.settings && Array.isArray(bad.notes) && bad.timers && bad.allergens);
+});
+
 console.log('\n' + passed + ' tests passed');

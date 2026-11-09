@@ -20,6 +20,20 @@
     if (!Array.isArray(s.children)) s.children = [];
     if (!Array.isArray(s.logs)) s.logs = [];
     if (!Array.isArray(s.growth)) s.growth = [];
+    /* تنظيف البيانات المستوردة: معرّفات آمنة وأرقام حقيقية */
+    function sid(x) { return String(x == null ? '' : x).replace(/[^\w-]/g, '').slice(0, 40); }
+    function n(x) { var v = +x; return x == null || x === '' || !isFinite(v) ? null : v; }
+    s.children.forEach(function (c) { c.id = sid(c.id); c.gaWeeks = n(c.gaWeeks) || 40; c.birthWeight = n(c.birthWeight); if (!Array.isArray(c.conditions)) c.conditions = []; });
+    s.activeId = sid(s.activeId);
+    s.logs.forEach(function (l) {
+      l.id = sid(l.id); l.childId = sid(l.childId); l.ts = n(l.ts) || 0;
+      ['minutes', 'left', 'right', 'ml', 'c', 'mood'].forEach(function (k) { if (k in l) l[k] = n(l[k]); });
+    });
+    s.growth.forEach(function (g) { g.id = sid(g.id); g.childId = sid(g.childId); g.w = n(g.w); g.l = n(g.l); g.hc = n(g.hc); });
+    if (!Array.isArray(s.notes)) s.notes = [];
+    Object.keys(s.timers || {}).forEach(function (k) { var t = s.timers[k]; if (!t || !isFinite(+t.start)) delete s.timers[k]; else t.start = +t.start; });
+    s.notes.forEach(function (x) { x.id = sid(x.id); x.childId = sid(x.childId); });
+    if (s.mother) { s.mother.age = n(s.mother.age); s.mother.parity = n(s.mother.parity) || 1; s.mother.prevIntervalMonths = n(s.mother.prevIntervalMonths); if (!Array.isArray(s.mother.conditions)) s.mother.conditions = []; }
     s.v = VERSION;
     return s;
   }

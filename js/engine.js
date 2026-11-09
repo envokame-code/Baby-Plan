@@ -289,13 +289,18 @@
   }
 
   /* التطعيم القادم */
+  /* تاريخ الاستحقاق: عدد أيام صحيح من تاريخ الولادة، كنص YYYY-MM-DD (لا يتأثر بالمنطقة الزمنية) */
+  function addDays(iso, n) {
+    var d = new Date(parseDate(iso).getTime() + Math.round(n) * DAY);
+    return d.getUTCFullYear() + '-' + (d.getUTCMonth() < 9 ? '0' : '') + (d.getUTCMonth() + 1) + '-' + (d.getUTCDate() < 10 ? '0' : '') + d.getUTCDate();
+  }
+  function vaccineDue(dob, m) { return addDays(dob, m * DAYS_PER_MONTH); }
   function nextVaccine(child, vaccines, done, onDate) {
     var months = ageInfo(child, onDate).months;
     for (var i = 0; i < vaccines.length; i++) {
       var v = vaccines[i];
       if (!done || !done[v.m]) {
-        var due = new Date(parseDate(child.dob).getTime() + v.m * DAYS_PER_MONTH * DAY);
-        return { v: v, due: due, overdue: months > v.m + 1 };
+        return { v: v, due: vaccineDue(child.dob, v.m), overdue: months > v.m + 1 };
       }
     }
     return null;
@@ -304,7 +309,7 @@
   var api = {
     ageInfo: ageInfo, formatAge: formatAge, stageFor: stageFor, daysBetween: daysBetween,
     lmsAt: lmsAt, zScore: zScore, valueAtZ: valueAtZ, normCdf: normCdf, growthAssess: growthAssess,
-    buildTracks: buildTracks, nextVaccine: nextVaccine, DAYS_PER_MONTH: DAYS_PER_MONTH
+    buildTracks: buildTracks, nextVaccine: nextVaccine, addDays: addDays, vaccineDue: vaccineDue, DAYS_PER_MONTH: DAYS_PER_MONTH
   };
   root.Engine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

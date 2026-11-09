@@ -108,6 +108,7 @@
   }
   function toast(msg, undo) {
     var t = document.getElementById('toast');
+    t.hidden = false;
     t.innerHTML = esc(msg) + (undo ? ' <button class="btn sm ghost" style="color:inherit;min-height:32px" data-action="undo">تراجع</button>' : '');
     t.hidden = false;
     clearTimeout(toast._t);
@@ -298,11 +299,12 @@
     var ns = nextSide(c);
     var feedBtn = c.feeding === 'formula' ? quickBtn('bottle') : quickBtn('breast', 'التالي: ' + SIDE[ns]);
     var vitdNeeded = a.months < 12 && c.feeding !== 'formula';
+    var formula = c.feeding === 'formula';
     var cells = [feedBtn, quickBtn('diaper'), quickBtn('sleep'),
-      c.feeding === 'formula' ? quickBtn('solid') : quickBtn('bottle'),
+      formula ? quickBtn('temp') : quickBtn('bottle'),
       a.devMonths >= 12 ? quickBtn('tummy', '', 'لعب نشط') : quickBtn('tummy'),
-      a.devMonths >= 5 ? quickBtn('solid') : quickBtn('pump'),
-      vitdNeeded ? quickBtn('vitd', sm.vitd ? 'تم اليوم ✓' : 'لم يُعطَ اليوم') : quickBtn('temp'),
+      a.devMonths >= 5 ? quickBtn('solid') : formula ? quickBtn('med') : quickBtn('pump'),
+      vitdNeeded ? quickBtn('vitd', sm.vitd ? 'تم اليوم ✓' : 'لم يُعطَ اليوم') : formula ? quickBtn('mom_mood') : quickBtn('temp'),
       quickBtn('mom_move'),
       '<button class="qa" data-action="go" data-view="log">' + ic('plus') + '<span>المزيد</span></button>'];
     h += '<section class="card" aria-label="تسجيل سريع"><div class="quick">' + cells.join('') + '</div></section>';
@@ -440,6 +442,9 @@
 
   function logForm(type, entry) {
     var t = T[type]; var e = entry || {};
+    if (type === 'breast' && e.id && e.left == null && e.right == null && e.minutes) {
+      e = Object.assign({}, e); if (e.side === 'r') e.right = e.minutes; else if (e.side === 'b') { e.left = Math.round(e.minutes / 2); e.right = e.minutes - e.left; } else e.left = e.minutes;
+    }
     var c = child();
     var head = '<div class="head"><h2>' + ic(t.ico) + ' ' + esc(t.name) + '</h2><button type="button" class="x" data-action="close" aria-label="إغلاق">' + ic('x') + '</button></div>';
     var h = '<form class="form" data-form="log" data-type="' + type + '"' + (e.id ? ' data-id="' + e.id + '"' : '') + '>' + head;
@@ -507,7 +512,7 @@
 
   function chartSvg(c, ind) {
     var a = E.ageInfo(c, today());
-    var maxM = a.devMonths < 12 ? 12 : a.devMonths < 24 ? 24 : 48;
+    var maxM = a.devMonths < 12 ? 12 : a.devMonths < 24 ? 24 : a.devMonths < 48 ? 48 : 60;
     var table = W.WHO_LMS[ind][c.sex === 'f' ? 'f' : 'm'];
     var key = IND[ind][2];
     var pts = S.growth.filter(function (g) { return g.childId === c.id && g[key] && !beforeTerm(c, g.date); })
@@ -557,10 +562,10 @@
           var pre = beforeTerm(c, g.date);
           function cell(indk, v, unit) {
             if (!v) return '<td>—</td>';
-            if (m > 60 || pre) return '<td>' + v + ' ' + unit + '</td>';
+            if (m > 60 || pre) return '<td>' + esc(v) + ' ' + unit + '</td>';
             var r = E.growthAssess(indk, c.sex, m, +v, W.WHO_LMS);
             var cls = r.level === 'ok' ? 'ok' : r.level === 'check' ? 'warn' : 'danger';
-            return '<td>' + v + ' ' + unit + '<br><span class="chip ' + cls + '">مئين ' + num(r.percentile, 0) + '</span></td>';
+            return '<td>' + esc(v) + ' ' + unit + '<br><span class="chip ' + cls + '">مئين ' + num(r.percentile, 0) + '</span></td>';
           }
           h += '<tr><td>' + esc(fmtDate(g.date)) + '<br><span class="small muted">' + (pre ? 'قبل موعد الولادة المتوقع' : esc(E.formatAge(Math.round(m * E.DAYS_PER_MONTH)))) + '</span></td>' +
             cell('wfa', g.w, 'كغ') + cell('lhfa', g.l, 'سم') + cell('hcfa', g.hc, 'سم') +
@@ -678,7 +683,7 @@
       var a = E.ageInfo(c, today());
       h += '<section class="card"><div class="head"><h2>جدول تطعيمات ' + esc(c.name) + '</h2><button class="btn sm" data-action="ics">' + ic('calendar') + 'أضيفي للتقويم</button></div><ul class="list">';
       W.VACCINES.forEach(function (v) {
-        var due = new Date(E.daysBetween('1970-01-01', c.dob) * 86400000 + v.m * E.DAYS_PER_MONTH * 86400000);
+        var due = E.vaccineDue(c.dob, v.m);
         var st = done[v.m] ? ['ok', done[v.m] === c.dob && v.m > 0 ? 'تم' : 'تم ' + fmtDate(done[v.m])] : a.months > v.m + 1 ? ['danger', 'متأخر'] : a.months >= v.m - 0.25 ? ['warn', 'مستحق الآن'] : ['', 'قادم'];
         h += '<li><input type="checkbox" style="width:26px;height:26px;min-height:0;flex:none;accent-color:var(--ok)" aria-label="تم تطعيم ' + esc(v.label) + '" data-action="vax" data-m="' + v.m + '"' + (done[v.m] ? ' checked' : '') + '>' +
           '<div class="grow"><div class="row"><b>' + esc(v.label) + '</b><span class="chip ' + st[0] + '">' + esc(st[1]) + '</span></div><div class="small muted">الموعد: ' + esc(fmtDate(due)) + '</div><div class="small">' + esc(v.list.join('، ')) + '</div></div></li>';
@@ -688,7 +693,7 @@
       var ageM = E.ageInfo(c, today()).months;
       var temps = childLogs(c, 'temp').sort(function (p, q) { return q.ts - p.ts; }).slice(0, 5);
       h += '<section class="card"><div class="head"><h2>' + ic('thermo') + ' تسجيل الحرارة</h2><button class="btn primary sm" data-action="addlog" data-type="temp">' + ic('plus') + 'قياس</button></div><p class="small">' + esc(W.FEVER.how) + '</p>';
-      if (temps.length) h += '<ul class="list">' + temps.map(function (l) { var adv = feverAdvice(ageM, l.c); return '<li><div class="grow"><b class="num">' + l.c + '°</b> <span class="small muted">' + esc(fmtDate(new Date(l.ts))) + ' ' + fmtTime(l.ts) + '</span>' + (adv ? '<div class="small" style="color:var(--' + (adv.level === 'urgent' ? 'danger' : 'warn') + ')">' + esc(adv.t) + '</div>' : '') + '</div></li>'; }).join('') + '</ul>';
+      if (temps.length) h += '<ul class="list">' + temps.map(function (l) { var adv = feverAdvice(ageM, l.c); return '<li><div class="grow"><b class="num">' + esc(l.c) + '°</b> <span class="small muted">' + esc(fmtDate(new Date(l.ts))) + ' ' + fmtTime(l.ts) + '</span>' + (adv ? '<div class="small" style="color:var(--' + (adv.level === 'urgent' ? 'danger' : 'warn') + ')">' + esc(adv.t) + '</div>' : '') + '</div></li>'; }).join('') + '</ul>';
       h += '</section><section class="card"><h2>متى أقلق؟</h2>' + plainList(W.FEVER.rules.map(function (r) { return r.t; })) + '</section>' +
         '<section class="card danger"><h2>علامات خطر مع الحمى — الطوارئ فورًا</h2>' + plainList(W.FEVER.red) + '<p class="small">' + esc(W.FEVER.note) + '</p>' + srcHtml(W.FEVER.src) + '</section>';
     } else if (tab === 'danger') {
@@ -726,12 +731,12 @@
     var vd = S.vaccines[c.id] || {};
     var vax = W.VACCINES.filter(function (v) { return v.m <= a.months; }).map(function (v) { return v.label + ': ' + (vd[v.m] ? 'تم' : 'غير مسجل'); });
     var temps = childLogs(c, 'temp').filter(function (l) { return l.ts >= days7; });
-    function gcell(ind, v, u) { if (!v) return '—'; var r = E.growthAssess(ind, c.sex, devMonthsAt(c, g.date), +v, W.WHO_LMS); return v + ' ' + u + ' (مئين ' + num(r.percentile, 0) + ')'; }
+    function gcell(ind, v, u) { if (!v) return '—'; var r = E.growthAssess(ind, c.sex, devMonthsAt(c, g.date), +v, W.WHO_LMS); return esc(v) + ' ' + u + ' (مئين ' + num(r.percentile, 0) + ')'; }
     return '<div class="head noprint"><h2>ملخص لزيارة الطبيب</h2><button type="button" class="x" data-action="close" aria-label="إغلاق">' + ic('x') + '</button></div>' +
       '<div class="card"><h2>' + esc(c.name) + ' — ' + (c.sex === 'f' ? 'أنثى' : 'ذكر') + '</h2><p>تاريخ الولادة: ' + esc(fmtDate(c.dob)) + ' · العمر: ' + esc(E.formatAge(a.days)) + (a.useCorrected ? ' (المصحح: ' + esc(E.formatAge(Math.max(0, a.correctedDays))) + ')' : '') + '</p>' +
-      '<p class="small">أسبوع الولادة: ' + c.gaWeeks + ' · وزن الولادة: ' + (c.birthWeight ? c.birthWeight + ' غ' : '—') + ' · الولادة: ' + esc((DELIVERY.filter(function (d) { return d[0] === c.delivery; })[0] || ['', '—'])[1]) + ' · الرضاعة: ' + esc((FEEDING.filter(function (d) { return d[0] === c.feeding; })[0] || ['', '—'])[1]) + '</p></div>' +
-      '<div class="card"><h2>آخر قياس' + (g ? ' (' + esc(fmtDate(g.date)) + ')' : '') + '</h2>' + (g && !beforeTerm(c, g.date) ? '<p>الوزن: ' + gcell('wfa', g.w, 'كغ') + '<br>الطول: ' + gcell('lhfa', g.l, 'سم') + '<br>محيط الرأس: ' + gcell('hcfa', g.hc, 'سم') + '</p>' : '<p class="muted">لا يوجد.</p>') + '</div>' +
-      '<div class="card"><h2>متوسط آخر 7 أيام</h2><p>رضعات: ' + num(feeds, 1) + ' يوميًا · نوم: ' + num(sleep, 1) + ' ساعة · حفاضات مبللة: ' + num(wet, 1) + '</p>' + (temps.length ? '<p>قياسات حرارة: ' + temps.map(function (t) { return t.c + '°'; }).join('، ') + '</p>' : '') + '</div>' +
+      '<p class="small">أسبوع الولادة: ' + esc(c.gaWeeks) + ' · وزن الولادة: ' + (c.birthWeight ? esc(c.birthWeight) + ' غ' : '—') + ' · الولادة: ' + esc((DELIVERY.filter(function (d) { return d[0] === c.delivery; })[0] || ['', '—'])[1]) + ' · الرضاعة: ' + esc((FEEDING.filter(function (d) { return d[0] === c.feeding; })[0] || ['', '—'])[1]) + '</p></div>' +
+      '<div class="card"><h2>آخر قياس' + (g ? ' (' + esc(fmtDate(g.date)) + ')' : '') + '</h2>' + (g && beforeTerm(c, g.date) ? '<p>آخر قياس قبل موعد الولادة المتوقع؛ يقيّمه الطبيب بمنحنيات الخدج.</p>' : g ? '<p>الوزن: ' + gcell('wfa', g.w, 'كغ') + '<br>الطول: ' + gcell('lhfa', g.l, 'سم') + '<br>محيط الرأس: ' + gcell('hcfa', g.hc, 'سم') + '</p>' : '<p class="muted">لا يوجد.</p>') + '</div>' +
+      '<div class="card"><h2>متوسط آخر 7 أيام</h2><p>رضعات: ' + num(feeds, 1) + ' يوميًا · نوم: ' + num(sleep, 1) + ' ساعة · حفاضات مبللة: ' + num(wet, 1) + '</p>' + (temps.length ? '<p>قياسات حرارة: ' + temps.map(function (t) { return esc(t.c) + '°'; }).join('، ') + '</p>' : '') + '</div>' +
       '<div class="card"><h2>مهارات المرحلة الحالية غير المعلَّمة' + (cur ? ' (عمر ' + cur.m + ' شهرًا)' : '') + '</h2>' + (missing.length ? plainList(missing) : '<p class="muted">لا شيء.</p>') + '</div>' +
       '<div class="card"><h2>التطعيمات المستحقة حتى الآن</h2>' + plainList(vax) + '</div>' +
       '<div class="card"><h2>أسئلتي</h2>' + plainList(S.notes.filter(function (n) { return n.childId === c.id && !n.done; }).map(function (n) { return n.text; })) + '</div>' +
@@ -786,10 +791,18 @@
     var meta = document.querySelector('meta[name=theme-color]');
     if (meta) meta.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#ffffff');
   }
+  var formDirty = false;
+  document.addEventListener('input', function (e) { if (e.target.closest('#app form')) formDirty = true; });
+  function canAutoRender() {
+    var a = document.activeElement;
+    return !formDirty && !document.getElementById('modal').innerHTML && !(a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName));
+  }
   function render(keepScroll) {
     var app = document.getElementById('app');
     var tabs = document.getElementById('tabs');
     var y = window.scrollY;
+    var openState = keepScroll ? [].map.call(app.querySelectorAll('details'), function (d) { return d.open; }) : null;
+    formDirty = false;
     if (!S.children.length) {
       app.innerHTML = vOnboard();
       tabs.hidden = true;
@@ -806,14 +819,25 @@
       b.classList.toggle('on', on);
       if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
-    if (keepScroll) window.scrollTo(0, y);
+    if (openState) {
+      var ds = app.querySelectorAll('details');
+      if (ds.length === openState.length) [].forEach.call(ds, function (d, i) { d.open = openState[i]; });
+      window.scrollTo(0, y);
+    }
   }
+  var returnFocus = null;
   function openModal(html) {
-    document.getElementById('modal').innerHTML = '<div class="modal-bg" data-action="bg"><div class="modal" role="dialog" aria-modal="true">' + html + '</div></div>';
-    var first = document.querySelector('#modal input:not([type=datetime-local]):not([type=radio]):not([type=checkbox]), #modal select');
-    if (first && window.matchMedia('(pointer:fine)').matches) first.focus();
+    if (!document.getElementById('modal').innerHTML) returnFocus = document.activeElement;
+    document.getElementById('modal').innerHTML = '<div class="modal-bg" data-action="bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle">' + html + '</div></div>';
+    var hd = document.querySelector('#modal h2');
+    if (hd) { hd.id = 'mtitle'; hd.setAttribute('tabindex', '-1'); hd.focus({ preventScroll: true }); }
   }
-  function closeModal() { document.getElementById('modal').innerHTML = ''; }
+  function closeModal() {
+    var had = !!document.getElementById('modal').innerHTML;
+    document.getElementById('modal').innerHTML = '';
+    if (had && returnFocus && document.body.contains(returnFocus)) { try { returnFocus.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+    returnFocus = null;
+  }
 
   function addLog(entry) {
     entry.id = W.Store.uid();
@@ -831,9 +855,9 @@
     var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BabyPlan//AR', 'CALSCALE:GREGORIAN'];
     W.VACCINES.forEach(function (v) {
       if (done[v.m]) return;
-      var due = new Date(E.daysBetween('1970-01-01', c.dob) * 86400000 + v.m * E.DAYS_PER_MONTH * 86400000);
-      if (due < new Date(Date.now() - 86400000)) return;
-      var d = due.getUTCFullYear() + pad(due.getUTCMonth() + 1) + pad(due.getUTCDate());
+      var due = E.vaccineDue(c.dob, v.m);
+      if (due < today()) return;
+      var d = due.replace(/-/g, '');
       lines.push('BEGIN:VEVENT', 'UID:' + c.id + '-' + v.m + '@babyplan', 'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z',
         'DTSTART;VALUE=DATE:' + d, 'SUMMARY:تطعيم ' + c.name + ' — ' + v.label, 'DESCRIPTION:' + v.list.join('، ').replace(/[,;]/g, ' '),
         'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY', 'DESCRIPTION:موعد تطعيم غدًا', 'END:VALARM', 'END:VEVENT');
@@ -863,7 +887,7 @@
         if (el.getAttribute('data-sub')) sub[view] = el.getAttribute('data-sub');
         closeModal(); render(); window.scrollTo(0, 0); break;
       case 'sub': sub[el.getAttribute('data-key')] = el.getAttribute('data-val'); render(true); break;
-      case 'switch': S.activeId = el.getAttribute('data-id'); save(); render(); break;
+      case 'switch': S.activeId = el.getAttribute('data-id'); sub.stage = null; save(); render(); break;
       case 'addlog': {
         var type = el.getAttribute('data-type');
         if (type === 'vitd') { addLog({ type: 'vitd', ts: Date.now() }); toast('تم تسجيل فيتامين د', true); render(true); break; }
@@ -909,7 +933,7 @@
         var cid = el.getAttribute('data-id');
         confirmSheet('حذف هذا الطفل وكل سجلاته؟', 'حذف', function () {
           S.children = S.children.filter(function (k) { return k.id !== cid; });
-          S.logs = S.logs.filter(function (l) { return l.childId !== cid; });
+          S.logs = S.logs.filter(function (l) { return l.childId !== cid || (T[l.type] && T[l.type].mom); });
           S.growth = S.growth.filter(function (g) { return g.childId !== cid; });
           ['milestones', 'vaccines', 'timers', 'allergens', 'teeth', 'play'].forEach(function (k) { delete S[k][cid]; });
           S.notes = S.notes.filter(function (n) { return n.childId !== cid; });
@@ -980,6 +1004,7 @@
         } catch (err) { toast('الملف غير صالح. اختاري ملف نسخة احتياطية من هذا التطبيق.'); }
       };
       r.readAsText(el.files[0]);
+      el.value = '';
     }
   });
   document.addEventListener('submit', function (e) {
@@ -1053,15 +1078,24 @@
       render(true);
     }
   });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeModal(); return; }
+    if (e.key === 'Tab' && document.getElementById('modal').innerHTML) {
+      var f = document.querySelectorAll('#modal button, #modal input, #modal select, #modal a[href], #modal [tabindex="-1"]');
+      if (!f.length) return;
+      var first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
 
   /* تحديث ساعات المؤقت كل ثانية دون إعادة الرسم */
   setInterval(function () {
     [].forEach.call(document.querySelectorAll('[data-clock]'), function (el) { el.textContent = clock(Date.now() - +el.getAttribute('data-clock')); });
   }, 1000);
   /* أعد الرسم كل دقيقة لتحديث "منذ آخر مرة" والوضع الليلي التلقائي */
-  setInterval(function () { if (!document.getElementById('modal').innerHTML && document.activeElement.tagName !== 'INPUT') { applyDisplay(); render(true); } }, 60000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden && !document.getElementById('modal').innerHTML) { S = W.Store.load(); applyDisplay(); render(true); } });
+  setInterval(function () { if (S.children.length && canAutoRender()) { applyDisplay(); render(true); } }, 60000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && canAutoRender()) { S = W.Store.load(); applyDisplay(); render(true); } });
 
   if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
     navigator.serviceWorker.register('sw.js').catch(function () { /* offline support optional */ });

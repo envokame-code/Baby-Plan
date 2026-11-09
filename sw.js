@@ -1,7 +1,7 @@
 /* عامل الخدمة: يحفظ ملفات التطبيق ليعمل دون إنترنت. Offline cache for the app shell. */
-var CACHE = 'babyplan-v2';
+var CACHE = 'babyplan-v3';
 var FILES = [
-  './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg',
+  './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png',
   'js/data/sources.js', 'js/data/growth.js', 'js/data/milestones.js', 'js/data/vaccines.js', 'js/data/content.js', 'js/data/extra.js',
   'js/engine.js', 'js/store.js', 'js/app.js'
 ];
@@ -17,8 +17,10 @@ self.addEventListener('activate', function (e) {
 self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(fetch(e.request).then(function (res) {
-    var copy = res.clone();
-    caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
+    if (res.ok) {
+      var copy = res.clone();
+      e.waitUntil(caches.open(CACHE).then(function (c) { return c.put(e.request, copy); }));
+    }
     return res;
   }).catch(function () { return caches.match(e.request, { ignoreSearch: true }); }));
 });
