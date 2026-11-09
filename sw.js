@@ -1,8 +1,8 @@
 /* عامل الخدمة: يحفظ ملفات التطبيق ليعمل دون إنترنت. Offline cache for the app shell. */
-var CACHE = 'babyplan-v1';
+var CACHE = 'babyplan-v2';
 var FILES = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg',
-  'js/data/sources.js', 'js/data/growth.js', 'js/data/milestones.js', 'js/data/vaccines.js', 'js/data/content.js',
+  'js/data/sources.js', 'js/data/growth.js', 'js/data/milestones.js', 'js/data/vaccines.js', 'js/data/content.js', 'js/data/extra.js',
   'js/engine.js', 'js/store.js', 'js/app.js'
 ];
 self.addEventListener('install', function (e) {

@@ -10,7 +10,7 @@ var assert = require('assert');
 var ctx = { window: {}, console: console };
 ctx.globalThis = ctx;
 vm.createContext(ctx);
-['js/data/sources.js', 'js/data/growth.js', 'js/data/milestones.js', 'js/data/vaccines.js', 'js/data/content.js', 'js/engine.js']
+['js/data/sources.js', 'js/data/growth.js', 'js/data/milestones.js', 'js/data/vaccines.js', 'js/data/content.js', 'js/data/extra.js', 'js/engine.js']
   .forEach(function (f) { vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), ctx, { filename: f }); });
 var W = ctx.window, E = W.Engine;
 var passed = 0;
@@ -39,11 +39,13 @@ test('every source id used in content and engine exists', function () {
   function grab(tips) { tips.forEach(function (t) { ids = ids.concat(t.src); }); }
   W.STAGES.forEach(function (s) { grab(s.feed); grab(s.move); grab(s.sleep); grab(s.care); });
   grab(W.MOTHER_GENERAL.move); grab(W.MOTHER_GENERAL.feed); grab(W.MOTHER_GENERAL.care);
-  ids = ids.concat(W.DANGER_BABY.src, W.DANGER_MOTHER.src);
+  ids = ids.concat(W.DANGER_BABY.src, W.DANGER_MOTHER.src, W.FEVER.src, W.FEED_CHECK.src, W.FEED_CHECK.weight.src, W.WHOOLEY.src);
+  grab(W.TEETH); grab(W.ALLERGY_TIPS); grab(W.RAMADAN); grab(W.SAFETY); grab(W.VACCINE_NOTES);
+  W.PLAY.forEach(function (b) { ids = ids.concat(b.src); });
   var engineSrc = fs.readFileSync(path.join(__dirname, '..', 'js/engine.js'), 'utf8');
   var re = /'([a-z0-9_]+)'/g, m;
   var known = Object.keys(W.SOURCES);
-  while ((m = re.exec(engineSrc))) if (/^(who|cdc|aap|nhs|acog|moh|sfda)_/.test(m[1])) ids.push(m[1]);
+  while ((m = re.exec(engineSrc))) if (/^(who|cdc|aap|nhs|acog|moh|sfda|niaid|nice)_/.test(m[1])) ids.push(m[1]);
   ids.forEach(function (id) { assert.ok(known.indexOf(id) >= 0, 'missing source ' + id); });
   known.forEach(function (k) { assert.ok(/^https:\/\//.test(W.SOURCES[k].url), 'bad url ' + k); });
 });
@@ -86,6 +88,17 @@ test('vaccine schedule ordered and next vaccine works', function () {
 
 test('milestones exist for each CDC checklist age to 4 years', function () {
   assert.strictEqual(W.MILESTONES.map(function (b) { return b.m; }).join(','), '2,4,6,9,12,15,18,24,30,36,48');
+});
+
+test('play ideas cover 0–48 months and fever rules are ordered', function () {
+  for (var m = 0; m < 48; m += 1) assert.ok(E.stageFor(m, W.PLAY).from <= m && E.stageFor(m, W.PLAY).to > m, 'play gap at ' + m);
+  assert.ok(W.FEVER.rules[0].maxM === 3 && W.FEVER.rules[0].temp === 38);
+});
+
+test('eczema child gets allergy track', function () {
+  var ids = E.buildTracks({ age: 30, parity: 1, conditions: [] },
+    { dob: '2026-05-01', gaWeeks: 40, sex: 'm', delivery: 'vaginal', feeding: 'breast', conditions: ['eczema'] }, '2026-10-01').map(function (t) { return t.id; });
+  assert.ok(ids.indexOf('allergy') >= 0);
 });
 
 console.log('\n' + passed + ' tests passed');
