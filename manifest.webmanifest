@@ -1,0 +1,15 @@
+{
+  "name": "خطة طفلي — Baby Plan",
+  "short_name": "خطة طفلي",
+  "description": "متابعة تغذية وحركة ورعاية طفلك من الولادة حتى 4 سنوات بمصادر معتمدة.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#faf7f5",
+  "theme_color": "#b0476b",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
