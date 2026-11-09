@@ -694,8 +694,8 @@
     } else if (tab === 'danger') {
       h += '<section class="card danger"><h2>' + ic('phone') + ' أرقام الطوارئ</h2><div class="grid2"><a class="btn dangerb" href="tel:997">الإسعاف 997</a><a class="btn" href="tel:937">الاستشارة 937</a></div>' +
         '<p class="small">997: الإسعاف (الهلال الأحمر). 937: مركز اتصال وزارة الصحة، مجاني 24 ساعة. والاستشارة الافتراضية عبر تطبيق "صحتي".</p></section>';
-      h += '<section class="card"><h2>علامات الخطر لدى الطفل</h2>' + plainList(W.DANGER_BABY.items) + srcHtml(W.DANGER_BABY.src) + '</section>';
-      h += '<section class="card"><h2>علامات الخطر لدى الأم بعد الولادة</h2>' + plainList(W.DANGER_MOTHER.items) + srcHtml(W.DANGER_MOTHER.src) + '</section>';
+      h += '<section class="card"><h2>علامات الخطر لدى الطفل</h2><p class="small"><b>عند أي علامة منها اذهبي للطوارئ أو اتصلي بـ 997.</b></p>' + plainList(W.DANGER_BABY.items) + srcHtml(W.DANGER_BABY.src) + '</section>';
+      h += '<section class="card"><h2>علامات الخطر لدى الأم بعد الولادة</h2><p class="small"><b>عند أي علامة منها اذهبي للطوارئ أو اتصلي بـ 997.</b></p>' + plainList(W.DANGER_MOTHER.items) + srcHtml(W.DANGER_MOTHER.src) + '</section>';
       h += '<section class="card"><h2>علامات الحساسية الشديدة</h2>' + tipsHtml(W.ALLERGY_TIPS.slice(3)) + '</section>';
     } else {
       var notes = S.notes.filter(function (n) { return n.childId === c.id; });
