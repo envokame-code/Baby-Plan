@@ -1,7 +1,7 @@
 /* عامل الخدمة: يحفظ ملفات التطبيق ليعمل دون إنترنت. Offline cache for the app shell. */
-var CACHE = 'babyplan-v4';
+var CACHE = 'babyplan-v5';
 var FILES = [
-  './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png',
+  './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg', 'fonts/plex-arabic-400.woff2', 'fonts/plex-arabic-600.woff2', 'fonts/plex-arabic-700.woff2', 'fonts/plex-latin-400.woff2', 'fonts/plex-latin-600.woff2', 'fonts/plex-latin-700.woff2', 'icons/icon-192.png', 'icons/apple-touch-icon.png',
   'js/data/sources.js', 'js/data/growth.js', 'js/data/milestones.js', 'js/data/vaccines.js', 'js/data/content.js', 'js/data/extra.js', 'js/data/topics.js',
   'js/engine.js', 'js/store.js', 'js/app.js'
 ];

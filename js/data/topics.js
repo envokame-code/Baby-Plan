@@ -42,6 +42,9 @@
   add('moh_wellbaby', 'وزارة الصحة السعودية', 'نمو الطفل وتطوره — عيادة الطفل السليم', 'https://www.moh.gov.sa/en/awarenessplateform/childshealth/pages/childgrowth.aspx');
   add('aap_periodicity', 'الأكاديمية الأمريكية لطب الأطفال (AAP)', 'جدول زيارات الطفل السليم (Bright Futures)', 'https://www.aap.org/en/practice-management/care-delivery-approaches/periodicity-schedule/');
 
+  add('nice_faltering', 'المعهد الوطني البريطاني للصحة (NICE)', 'تعثّر النمو عند الأطفال — معيار الجودة QS197', 'https://nice.org.uk/guidance/qs197/chapter/Quality-statement-3-Management-plan');
+  add('mchat', 'M-CHAT-R/F (روبنز وفين وبارتون)', 'استبيان الكشف المبكر عن التوحد — النسخة العربية', 'https://www.mchatscreen.com/wp-content/uploads/2015/05/M-CHAT-R_F_Arabic.pdf');
+
   W.TOPICS = [
     { id: 'screening', icon: 'shield', title: 'فحوصات حديث الولادة', from: 0, to: 2,
       intro: 'ثلاثة فحوصات قبل الخروج من المستشفى. تأكدي أنها تمت واسألي عن نتائجها.',

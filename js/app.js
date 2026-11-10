@@ -29,8 +29,13 @@
     temp: { ico: 'thermo', name: 'حرارة' },
     med: { ico: 'pill', name: 'دواء' },
     mom_move: { ico: 'walk', name: 'نشاط الأم', mom: true },
-    mom_mood: { ico: 'heart', name: 'مزاج الأم', mom: true }
+    mom_mood: { ico: 'heart', name: 'مزاج الأم', mom: true },
+    mom_bp: { ico: 'heart', name: 'ضغط الأم', mom: true }
   };
+  var APP_VERSION = '2026.11.3';
+  var WHATS_NEW = ['صفحة السجل: تصفية حسب النوع وملخص لكل يوم', 'رسوم أسبوعية أوضح، ونمط اليوم للنوم والرضاعة', 'تنبيه إذا نزل وزن الطفل على المنحنى، ومعدل زيادة الوزن', 'مواعيدك الشخصية بعد الولادة، وسجل ضغط الدم', 'تذكير بفحص التوحد المبكر عند 18 و24 شهرًا', 'وضع الأب، واختصارات على أيقونة التطبيق (أندرويد)', 'الخط محفوظ داخل التطبيق ويعمل دون إنترنت'];
+  function hasHtn() { return (S.mother.conditions || []).indexOf('htn') >= 0; }
+  function isDad() { return S.settings.caregiver === 'dad'; }
 
   /* ---------- helpers ---------- */
   function esc(s) {
@@ -71,16 +76,21 @@
     return S.children[0] || null;
   }
   function today() { return isoDate(); }
-  function srcHtml(ids) {
+  function srcHtml(ids, text) {
     if (!ids || !ids.length) return '';
     var list = ids.map(function (id) { return W.SOURCES[id]; }).filter(Boolean);
     if (!list.length) return '';
     return '<details class="src"><summary>' + ic('book') + 'المصدر' + (list.length > 1 ? ' (' + list.length + ')' : '') + '</summary><ul>' + list.map(function (s) {
       return '<li><a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.org) + ' — ' + esc(s.title) + '</a></li>';
-    }).join('') + '</ul></details>';
+    }).join('') + (text ? '<li class="report"><a href="' + esc(reportUrl(text, list)) + '" target="_blank" rel="noopener">أبلغي عن خطأ في هذه المعلومة</a></li>' : '') + '</ul></details>';
   }
   function tipsHtml(tips) {
-    return '<ul class="tips">' + tips.map(function (t) { return '<li>' + esc(t.t) + srcHtml(t.src) + '</li>'; }).join('') + '</ul>';
+    return '<ul class="tips">' + tips.map(function (t) { return '<li>' + esc(t.t) + srcHtml(t.src, t.t) + '</li>'; }).join('') + '</ul>';
+  }
+  /* رابط الإبلاغ عن خطأ: يفتح طلبًا عامًا في GitHub دون أي بيانات شخصية */
+  function reportUrl(text, srcs) {
+    var body = 'النص:\n' + text + '\n\nالمصدر:\n' + srcs.map(function (x) { return x.org + ' — ' + x.title + '\n' + x.url; }).join('\n') + '\n\nما الخطأ؟\n';
+    return 'https://github.com/envokame-code/Baby-Plan/issues/new?title=' + encodeURIComponent('خطأ في معلومة') + '&body=' + encodeURIComponent(body.slice(0, 1500));
   }
   function plainList(items, prefix) {
     return '<ul class="tips">' + items.map(function (i) { return '<li>' + (prefix || '') + esc(i) + '</li>'; }).join('') + '</ul>';
@@ -354,6 +364,30 @@
     return out;
   }
 
+  /* ---------- مواعيد الأم والطفل الشخصية ---------- */
+  function datesList(c, onlySoon) {
+    var t = today(), soon = E.addDays(t, 14);
+    return E.motherDates(S.mother, c).filter(function (d) { return d.to >= t && (!onlySoon || d.from <= soon); });
+  }
+  function datesHtml(list) {
+    var t = today();
+    return '<ul class="list">' + list.map(function (d) {
+      var now = d.from <= t;
+      return '<li><span class="ico' + (d.id.indexOf('mchat') === 0 ? '' : ' mom') + '">' + ic('calendar') + '</span><div class="grow"><b>' + esc(d.title) + '</b><div class="small muted">' +
+        (d.from === d.to ? esc(fmtDate(d.from)) : 'من ' + esc(fmtDate(d.from)) + ' إلى ' + esc(fmtDate(d.to))) + '</div>' + srcHtml(d.src) + '</div>' + (now ? '<span class="chip warn">الآن</span>' : '') + '</li>';
+    }).join('') + '</ul>';
+  }
+  function datesIcs(c) {
+    var lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BabyPlan//AR', 'CALSCALE:GREGORIAN'];
+    datesList(c, false).forEach(function (d) {
+      lines.push('BEGIN:VEVENT', 'UID:' + c.id + '-' + d.id + '@babyplan', 'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z',
+        'DTSTART;VALUE=DATE:' + d.from.replace(/-/g, ''), 'DTEND;VALUE=DATE:' + E.addDays(d.to, 1).replace(/-/g, ''), 'SUMMARY:' + d.title,
+        'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY', 'DESCRIPTION:' + d.title, 'END:VALARM', 'END:VEVENT');
+    });
+    lines.push('END:VCALENDAR');
+    return lines.join('\r\n');
+  }
+
   /* ---------- onboarding ---------- */
   function vOnboard() {
     return '<section class="card tint"><div class="hero"><div class="art">' + stageArt(0) + '</div><div class="who"><h1>أهلًا بك في "خطة طفلي"</h1>' +
@@ -430,8 +464,8 @@
       formula ? quickBtn('temp') : quickBtn('bottle'),
       a.devMonths >= 12 ? quickBtn('tummy', '', 'لعب نشط') : quickBtn('tummy'),
       a.devMonths >= 5 ? quickBtn('solid') : formula ? quickBtn('med') : quickBtn('pump'),
-      vitdNeeded ? quickBtn('vitd', sm.vitd ? 'تم اليوم ✓' : 'لم يُعطَ اليوم') : formula ? quickBtn('mom_mood') : quickBtn('temp'),
-      quickBtn('mom_move'),
+      vitdNeeded ? quickBtn('vitd', sm.vitd ? 'تم اليوم ✓' : 'لم يُعطَ اليوم') : formula ? (isDad() ? quickBtn('med') : quickBtn('mom_mood')) : quickBtn('temp'),
+      isDad() ? quickBtn('temp') : hasHtn() && a.days < 84 ? quickBtn('mom_bp') : quickBtn('mom_move'),
       '<button class="qa" data-action="go" data-view="log">' + ic('plus') + '<span>المزيد</span></button>'];
     h += '<section class="card" aria-label="تسجيل سريع"><div class="quick">' + cells.join('') + '</div>';
 
@@ -451,6 +485,10 @@
     if (tpObj) h += '<section class="card"><div class="head"><h2>' + ic(tpObj.icon) + ' ' + esc(tpObj.title) + '</h2><span class="chip baby">مهم الآن</span></div><p class="small">' + esc(tpObj.intro || '') + '</p><button class="btn sm" data-action="topic" data-id="' + tpObj.id + '">اقرئي النصائح</button></section>';
     if (profileIncomplete(c)) h += '<section class="card mom"><h2>أكملي ملفك</h2><p class="small">أضيفي نوع الولادة وعمرك وحالتك الصحية لتظهر لك نصائح مخصصة.</p><button class="btn momb sm" data-action="complete">إكمال الآن</button></section>';
 
+    var soonDates = datesList(c, true);
+    if (soonDates.length) h += '<section class="card"><div class="head"><h2>' + ic('calendar') + ' مواعيد قريبة</h2><button class="btn sm ghost" data-action="icsdates">أضيفي للتقويم</button></div>' + datesHtml(soonDates) + '</section>';
+    var trH = E.growthTrend(c, S.growth, W.WHO_LMS);
+    if (trH.alert) h += '<section class="card warn"><h2>' + ic('alert') + ' نزل الوزن على المنحنى</h2><p class="small">راجعي صفحة النمو وناقشي ذلك مع طبيب الطفل.</p><button class="btn sm" data-action="go" data-view="growth" data-sub="measure">صفحة النمو</button></section>';
     var hc = S.settings.homeCards || {};
     function on(k) { return hc[k] !== false; }
 
@@ -488,7 +526,7 @@
 
     /* mother check-in */
     var lastCheck = S.checkins.length ? S.checkins[S.checkins.length - 1].date : null;
-    if (on('mom') && a.days < 365 && (!lastCheck || E.daysBetween(lastCheck, today()) >= 28) && a.days >= 10) {
+    if (on('mom') && !isDad() && a.days < 365 && (!lastCheck || E.daysBetween(lastCheck, today()) >= 28) && a.days >= 10) {
       h += '<section class="card mom"><h2>' + ic('heart') + ' كيف حالك أنتِ؟</h2><p class="small">سؤالان قصيران من إرشادات NICE للاطمئنان على صحتك النفسية بعد الولادة.</p><button class="btn momb" data-action="checkin">ابدئي الاطمئنان</button></section>';
     }
 
@@ -526,59 +564,104 @@
       case 'vitd': return 'تم إعطاء الجرعة';
       case 'temp': return l.c ? l.c + '°' : '';
       case 'med': return (l.name || '') + (l.dose ? ' — ' + l.dose : '');
+      case 'mom_bp': return (l.sys || '?') + '/' + (l.dia || '?') + ' ملم زئبق';
       case 'mom_mood': return ['', 'صعب جدًا', 'صعب', 'متوسط', 'جيد', 'ممتاز'][l.mood || 3] + (l.note ? ' — ' + l.note : '');
     }
     return '';
   }
-  function barChart(days, series, unit) {
-    var W2 = 320, H = 130, L = 26, B = 22, T2 = 8;
-    var max = 1; days.forEach(function (d, i) { max = Math.max(max, series[i]); });
-    var bw = (W2 - L - 4) / days.length;
-    var s = '<svg class="chart" viewBox="0 0 ' + W2 + ' ' + H + '" role="img" aria-label="رسم بياني لآخر 7 أيام">';
-    for (var g = 0; g <= 2; g++) { var y = T2 + (H - T2 - B) * g / 2; s += '<line class="grid" x1="' + L + '" x2="' + W2 + '" y1="' + y + '" y2="' + y + '"/><text x="' + (L - 4) + '" y="' + (y + 3) + '" text-anchor="end">' + num(max * (1 - g / 2), max < 10 ? 1 : 0) + '</text>'; }
+  /* رسم أعمدة لآخر 7 أيام: الأقدم يمينًا والأحدث يسارًا (اتجاه القراءة العربية)، والرقم فوق كل عمود */
+  function barChart(days, series, unit, band, dp) {
+    var W2 = 330, H = 150, R = 8, L = 8, B = 30, T2 = 18;
+    var max = 1; series.forEach(function (v) { max = Math.max(max, v); }); if (band) max = Math.max(max, band[1]);
+    max *= 1.1;
+    var n = days.length, bw = (W2 - L - R) / n;
+    function X(i) { return W2 - R - (i + 1) * bw; }
+    function Y(v) { return T2 + (H - T2 - B) * (1 - v / max); }
+    var s = '<svg class="chart" viewBox="0 0 ' + W2 + ' ' + H + '" role="img" aria-label="' + esc(unit) + ' لآخر 7 أيام">';
+    if (band) s += '<rect class="okband" x="' + L + '" width="' + (W2 - L - R) + '" y="' + Y(band[1]).toFixed(1) + '" height="' + (Y(band[0]) - Y(band[1])).toFixed(1) + '"/>';
+    s += '<line class="axis" x1="' + L + '" x2="' + (W2 - R) + '" y1="' + (H - B) + '" y2="' + (H - B) + '"/>';
     days.forEach(function (d, i) {
-      var v = series[i]; var hgt = (H - T2 - B) * v / max; var x = L + i * bw + bw * 0.2;
-      s += '<rect class="bar" x="' + x.toFixed(1) + '" y="' + (H - B - hgt).toFixed(1) + '" width="' + (bw * 0.6).toFixed(1) + '" height="' + Math.max(0, hgt).toFixed(1) + '" rx="3"/>';
-      s += '<text x="' + (x + bw * 0.3).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + new Date(d).getDate() + '</text>';
+      var v = series[i], x = X(i) + bw * 0.18, w = bw * 0.64, y = Y(v);
+      s += '<rect class="bar' + (i === n - 1 ? ' today' : '') + '" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.max(0, H - B - y).toFixed(1) + '" rx="4"/>';
+      s += '<text class="val" x="' + (x + w / 2).toFixed(1) + '" y="' + (y - 4).toFixed(1) + '" text-anchor="middle">' + num(v, dp || 0) + '</text>';
+      var dt = new Date(d);
+      s += '<text x="' + (x + w / 2).toFixed(1) + '" y="' + (H - 16) + '" text-anchor="middle">' + (i === n - 1 ? 'اليوم' : dt.toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { weekday: 'short' })) + '</text>' +
+        '<text x="' + (x + w / 2).toFixed(1) + '" y="' + (H - 3) + '" text-anchor="middle">' + dt.getDate() + '</text>';
     });
-    return s + '</svg><p class="small muted">' + esc(unit) + ' — آخر 7 أيام (الرقم أسفل كل عمود هو اليوم من الشهر)</p>';
+    return s + '</svg>' + (band ? '<div class="legend"><span><i style="background:var(--ok-soft)"></i>المدى الموصى به</span></div>' : '');
   }
+  /* خط زمني لـ 24 ساعة لكل يوم: النوم كأشرطة والرضعات كنقاط */
+  function dayTimeline(c, days) {
+    var Wd = 330, rowH = 26, L = 46, R = 6, T0 = 18, H = T0 + days.length * rowH + 6;
+    function X(h) { return L + (Wd - L - R) * h / 24; }
+    var s = '<svg class="chart" viewBox="0 0 ' + Wd + ' ' + H + '" role="img" aria-label="نمط النوم والرضاعة خلال اليوم">';
+    [0, 6, 12, 18, 24].forEach(function (h) { s += '<line class="grid" x1="' + X(h) + '" x2="' + X(h) + '" y1="' + (T0 - 4) + '" y2="' + (H - 4) + '"/><text x="' + X(h) + '" y="11" text-anchor="middle">' + (h === 24 ? '' : pad(h) + ':00') + '</text>'; });
+    var sleeps = childLogs(c, 'sleep'), feeds = childLogs(c).filter(function (l) { return l.type === 'breast' || l.type === 'bottle'; });
+    days.slice().reverse().forEach(function (d0, r) {
+      var y = T0 + r * rowH, d1 = d0 + 86400000;
+      s += '<rect class="trow" x="' + L + '" y="' + y + '" width="' + (Wd - L - R) + '" height="' + (rowH - 6) + '" rx="4"/>';
+      var dt = new Date(d0);
+      s += '<text x="' + (L - 6) + '" y="' + (y + 14) + '" text-anchor="end">' + (r === 0 ? 'اليوم' : dt.toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { weekday: 'short' })) + '</text>';
+      sleeps.forEach(function (l) {
+        var a = Math.max(l.ts, d0), b = Math.min(endTs(l), d1); if (b <= a) return;
+        s += '<rect class="tsleep" x="' + X((a - d0) / 3600000).toFixed(1) + '" y="' + (y + 2) + '" width="' + Math.max(1.5, X((b - d0) / 3600000) - X((a - d0) / 3600000)).toFixed(1) + '" height="' + (rowH - 10) + '" rx="3"/>';
+      });
+      feeds.forEach(function (l) { if (l.ts >= d0 && l.ts < d1) s += '<circle class="tfeed" cx="' + X((l.ts - d0) / 3600000).toFixed(1) + '" cy="' + (y + (rowH - 6) / 2) + '" r="3.2"/>'; });
+    });
+    return s + '</svg><div class="legend"><span><i style="background:var(--primary)"></i>نوم</span><span><i style="background:var(--mom);border-radius:99px"></i>رضعة</span></div>';
+  }
+  var LOG_FILTERS = [['all', 'الكل', null], ['feed', 'الرضاعة', ['breast', 'bottle', 'pump', 'solid']], ['sleep', 'النوم', ['sleep']], ['diaper', 'الحفاض', ['diaper']], ['health', 'الصحة', ['temp', 'med', 'vitd', 'tummy']], ['mom', 'الأم', ['mom_move', 'mom_mood', 'mom_bp', 'pump']]];
   function vLog() {
     var c = child();
     var tab = sub.log || 'list';
     var h = timerBanner(c);
     h += '<section class="card"><h2>تسجيل جديد لـ ' + esc(c.name) + '</h2><div class="quick">' +
-      Object.keys(T).map(function (k) { return quickBtn(k); }).join('') + '</div></section>';
+      Object.keys(T).filter(function (k) { return k !== 'mom_bp' || hasHtn(); }).filter(function (k) { return !T[k].mom || S.settings.caregiver !== 'dad' || k === 'pump'; }).map(function (k) { return quickBtn(k); }).join('') + '</div></section>';
     h += seg('log', [['list', 'السجلات'], ['week', 'الأسبوع']], tab);
     if (tab === 'week') {
+      var a = E.ageInfo(c, today());
       var days = []; for (var i = 6; i >= 0; i--) days.push(startOfDay(Date.now() - i * 86400000));
-      function per(type, fn) { return days.map(function (d) { return fn(childLogs(c, type).filter(function (l) { return l.ts >= d && l.ts < d + 86400000; })); }); }
-      var feeds = days.map(function (d, i) { return per('breast', function (x) { return x.length; })[i] + per('bottle', function (x) { return x.length; })[i]; });
-      var sleep = per('sleep', function (x) { return sumMin(x) / 60; });
-      var wet = per('diaper', function (x) { return x.filter(function (l) { return l.kind !== 'dirty'; }).length; });
-      h += '<section class="card"><h2>الرضعات يوميًا</h2>' + barChart(days, feeds, 'عدد الرضعات') + '</section>' +
-        '<section class="card"><h2>النوم يوميًا</h2>' + barChart(days, sleep, 'ساعات النوم') + '</section>' +
-        '<section class="card"><h2>الحفاضات المبللة يوميًا</h2>' + barChart(days, wet, 'عدد الحفاضات المبللة') + '</section>';
+      function per(types, fn) { return days.map(function (d) { return fn(childLogs(c).filter(function (l) { return types.indexOf(l.type) >= 0 && l.ts >= d && l.ts < d + 86400000; })); }); }
+      var feeds = per(['breast', 'bottle'], function (x) { return x.length; });
+      var sleep = per(['sleep'], function (x) { return sumMin(x) / 60; });
+      var wet = per(['diaper'], function (x) { return x.filter(function (l) { return l.kind !== 'dirty'; }).length; });
+      var sr = sleepRange(a.devMonths);
+      h += '<section class="card"><h2>نمط اليوم</h2><p class="small muted">كل سطر يوم كامل من منتصف الليل إلى منتصف الليل.</p>' + dayTimeline(c, days) + '</section>' +
+        '<section class="card"><h2>الرضعات يوميًا</h2>' + barChart(days, feeds, 'عدد الرضعات', a.days <= 42 ? [8, 12] : null) + '</section>' +
+        '<section class="card"><h2>ساعات النوم يوميًا</h2>' + barChart(days, sleep, 'ساعات النوم', sr, 1) + srcHtml(['who_pa_u5']) + '</section>' +
+        '<section class="card"><h2>الحفاضات المبللة يوميًا</h2>' + barChart(days, wet, 'عدد الحفاضات المبللة', a.days <= 42 && a.days >= 5 ? [6, Math.max(8, Math.max.apply(null, wet))] : null) + '</section>';
       return h;
     }
-    var items = S.logs.filter(function (l) { return l.childId === c.id || (T[l.type] && T[l.type].mom); })
-      .sort(function (a, b) { return b.ts - a.ts; }).slice(0, 100);
-    h += '<section class="card"><h2>آخر السجلات</h2>';
-    if (!items.length) h += '<div class="empty">' + ic('log') + '<p>لا توجد سجلات بعد. اضغطي أي زر أعلاه لتسجيل أول رضعة أو حفاض.</p></div>';
-    else {
-      var lastDay = '';
-      h += '<ul class="list">';
-      items.forEach(function (l) {
-        var t = T[l.type]; if (!t) return;
-        var d = isoDate(new Date(l.ts));
-        if (d !== lastDay) { h += '<li class="day">' + esc(fmtDate(d)) + '</li>'; lastDay = d; }
+    var fk = sub.logFilter || 'all';
+    var ft = LOG_FILTERS.filter(function (f) { return f[0] === fk; })[0][2];
+    h += '<div class="chips" role="group" aria-label="تصفية السجلات">' + LOG_FILTERS.map(function (f) {
+      return '<button class="chip' + (f[0] === fk ? ' on' : '') + '" aria-pressed="' + (f[0] === fk) + '" data-action="logfilter" data-val="' + f[0] + '">' + esc(f[1]) + '</button>';
+    }).join('') + '</div>';
+    var items = S.logs.filter(function (l) { return (l.childId === c.id || (T[l.type] && T[l.type].mom)) && T[l.type] && (!ft || ft.indexOf(l.type) >= 0); })
+      .sort(function (x, y) { return y.ts - x.ts; });
+    if (!items.length) return h + '<section class="card"><div class="empty">' + ic('log') + '<p>لا توجد سجلات هنا بعد. اضغطي أي زر أعلاه للتسجيل.</p></div></section>';
+    var byDay = {}, order = [];
+    items.forEach(function (l) { var d = isoDate(new Date(l.ts)); if (!byDay[d]) { byDay[d] = []; order.push(d); } byDay[d].push(l); });
+    var showDays = sub.logDays || 3;
+    order.slice(0, showDays).forEach(function (d, di) {
+      var list = byDay[d];
+      var fe = list.filter(function (l) { return l.type === 'breast' || l.type === 'bottle'; }).length;
+      var we = list.filter(function (l) { return l.type === 'diaper' && l.kind !== 'dirty'; }).length;
+      var sl = sumMin(list.filter(function (l) { return l.type === 'sleep'; })) / 60;
+      var sumBits = [];
+      if (fe) sumBits.push(fe + ' رضعات'); if (we) sumBits.push(we + ' مبلل'); if (sl) sumBits.push(num(sl, 1) + ' س نوم');
+      if (!sumBits.length) sumBits.push(list.length + ' سجل');
+      h += '<details class="card fold"' + (di === 0 ? ' open' : '') + '><summary class="head"><h2>' + (d === today() ? 'اليوم' : esc(fmtDate(d))) + '</h2><span class="small muted">' + esc(sumBits.join(' · ')) + '</span></summary><ul class="list">';
+      list.forEach(function (l) {
+        var t = T[l.type];
         h += '<li><span class="ico' + (t.mom ? ' mom' : '') + '">' + ic(t.ico) + '</span><div class="grow"><b>' + esc(t.name) + '</b> <span class="muted small num">' + fmtTime(l.ts) + '</span><div class="small">' + esc(logDetail(l)) + '</div></div>' +
           '<button class="x" aria-label="تعديل" data-action="editlog" data-id="' + l.id + '">' + ic('edit') + '</button>' +
           '<button class="x" aria-label="حذف" data-action="dellog" data-id="' + l.id + '">' + ic('trash') + '</button></li>';
       });
-      h += '</ul>';
-    }
-    return h + '</section>';
+      h += '</ul></details>';
+    });
+    if (order.length > showDays) h += '<button class="btn block" data-action="moredays">عرض أيام أقدم (' + (order.length - showDays) + ')</button>';
+    return h;
   }
 
   function logForm(type, entry) {
@@ -633,8 +716,15 @@
         h += field('l_c', 'الحرارة (°م)', '<input id="l_c" name="l_c" type="number" inputmode="decimal" step="0.1" min="34" max="43" value="' + esc(e.c || '') + '" required>', W.FEVER.how);
         break;
       case 'med':
+        var recentMed = childLogs(c, 'med').filter(function (l) { return l.id !== e.id; }).sort(function (x, y) { return y.ts - x.ts; }).slice(0, 3);
+        if (recentMed.length) h += '<div class="card tint"><b class="small">آخر الجرعات</b>' + plainList(recentMed.map(function (l) { return (l.name || 'دواء') + ' — ' + ago(l.ts) + ' (' + fmtTime(l.ts) + ')'; })) + '<p class="hint">لا تعطي جرعة قبل الموعد الذي حدده الطبيب أو النشرة.</p></div>';
         h += field('l_name', 'اسم الدواء', '<input id="l_name" name="l_name" maxlength="60" value="' + esc(e.name || '') + '" required>') +
           field('l_dose', 'الجرعة', '<input id="l_dose" name="l_dose" maxlength="40" value="' + esc(e.dose || '') + '" placeholder="كما وصفها الطبيب أو كما في النشرة">');
+        break;
+      case 'mom_bp':
+        h += '<div class="grid2">' + field('l_sys', 'الانقباضي (العلوي)', '<input id="l_sys" name="l_sys" type="number" inputmode="numeric" min="60" max="260" value="' + esc(e.sys || '') + '" required>') +
+          field('l_dia', 'الانبساطي (السفلي)', '<input id="l_dia" name="l_dia" type="number" inputmode="numeric" min="30" max="180" value="' + esc(e.dia || '') + '" required>') + '</div>' +
+          '<p class="hint">قيسي وأنتِ جالسة مرتاحة 5 دقائق. 160/110 أو أعلى ← الطوارئ فورًا.</p>';
         break;
       case 'mom_mood':
         h += '<div class="field"><label>كيف تشعرين اليوم؟</label>' + choice('l_mood', [['5', 'ممتاز'], ['4', 'جيد'], ['3', 'متوسط'], ['2', 'صعب'], ['1', 'صعب جدًا']], e.mood || '3') + '</div>' +
@@ -705,25 +795,30 @@
       h += '<section class="card"><div class="head"><h2>منحنى النمو</h2><button class="btn primary sm" data-action="addgrowth">' + ic('plus') + 'قياس جديد</button></div>' +
         seg('ind', [['wfa', 'الوزن'], ['lhfa', 'الطول'], ['hcfa', 'محيط الرأس']], ind) + chartSvg(c, ind) + srcHtml(['who_growth']) + '</section>';
       var rows = S.growth.filter(function (g) { return g.childId === c.id; }).sort(function (p, q) { return q.date < p.date ? -1 : 1; });
+      var tr = E.growthTrend(c, S.growth, W.WHO_LMS);
+      if (tr.alert) h += '<section class="card warn"><h2>' + ic('alert') + ' نزل الوزن على المنحنى</h2><p class="small">نزل وزن ' + esc(c.name) + ' نحو ' + num(tr.spaces, 1) + ' من المسافات بين خطوط المنحنى منذ الولادة. حسب إرشادات NICE، النزول ' + (tr.threshold === 1 ? 'خطًّا واحدًا (لأن الوزن الأساسي منخفض)' : 'خطّين أو أكثر') + ' يستدعي مراجعة الطبيب لتقييم الرضاعة والنمو. هذا ليس تشخيصًا.</p>' + srcHtml(['nice_faltering']) + '</section>';
+      if (tr.velocity) h += '<section class="card"><h2>معدل زيادة الوزن</h2><p><b class="num">' + (tr.velocity.gPerDay >= 0 ? '+' : '') + tr.velocity.gPerDay + ' غ يوميًا</b> <span class="small muted">(نحو ' + Math.round(tr.velocity.gPerDay * 7) + ' غ أسبوعيًا، آخر ' + tr.velocity.days + ' يومًا)</span></p><p class="small muted">الزيادة تقل طبيعيًا مع تقدم العمر. الأهم أن يسير الوزن موازيًا لخطوط المنحنى.</p></section>';
       h += '<section class="card"><h2>سجل القياسات</h2>';
       if (!rows.length) h += '<div class="empty">' + ic('growth') + '<p>أضيفي أول قياس من بطاقة المراجعة أو ميزان المنزل.</p></div>';
       else {
-        h += '<div class="scroll-x"><table><thead><tr><th>التاريخ</th><th>الوزن</th><th>الطول</th><th>الرأس</th><th><span class="sr">إجراءات</span></th></tr></thead><tbody>';
+        h += '<ul class="list">';
         rows.forEach(function (g) {
           var m = devMonthsAt(c, g.date);
           var pre = beforeTerm(c, g.date);
-          function cell(indk, v, unit) {
-            if (!v) return '<td>—</td>';
-            if (m > 60 || pre) return '<td>' + esc(v) + ' ' + unit + '</td>';
-            var r = E.growthAssess(indk, c.sex, m, +v, W.WHO_LMS);
-            var cls = r.level === 'ok' ? 'ok' : r.level === 'check' ? 'warn' : 'danger';
-            return '<td>' + esc(v) + ' ' + unit + '<br><span class="chip ' + cls + '">مئين ' + num(r.percentile, 0) + '</span></td>';
+          function cell(indk, v, unit, label) {
+            if (!v) return '';
+            var chip = '';
+            if (!(m > 60 || pre)) {
+              var r = E.growthAssess(indk, c.sex, m, +v, W.WHO_LMS);
+              chip = '<span class="chip ' + (r.level === 'ok' ? 'ok' : r.level === 'check' ? 'warn' : 'danger') + '">مئين ' + num(r.percentile, 0) + '</span>';
+            }
+            return '<div class="gm"><span class="muted">' + label + '</span><b class="num">' + esc(v) + ' ' + unit + '</b>' + chip + '</div>';
           }
-          h += '<tr><td>' + esc(fmtDate(g.date)) + '<br><span class="small muted">' + (pre ? 'قبل موعد الولادة المتوقع' : esc(E.formatAge(Math.round(m * E.DAYS_PER_MONTH)))) + '</span></td>' +
-            cell('wfa', g.w, 'كغ') + cell('lhfa', g.l, 'سم') + cell('hcfa', g.hc, 'سم') +
-            '<td><button class="x" aria-label="حذف القياس" data-action="delgrowth" data-id="' + g.id + '">' + ic('trash') + '</button></td></tr>';
+          h += '<li><div class="grow"><div class="row"><b>' + esc(new Date(g.date + 'T12:00:00').toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { day: 'numeric', month: 'short', year: 'numeric' })) + '</b><span class="small muted">' + (pre ? 'قبل موعد الولادة المتوقع' : 'عمر ' + esc(E.formatAge(Math.round(m * E.DAYS_PER_MONTH)))) + '</span></div>' +
+            '<div class="gms">' + cell('wfa', g.w, 'كغ', 'الوزن') + cell('lhfa', g.l, 'سم', 'الطول') + cell('hcfa', g.hc, 'سم', 'الرأس') + '</div></div>' +
+            '<button class="x" aria-label="حذف القياس" data-action="delgrowth" data-id="' + g.id + '">' + ic('trash') + '</button></li>';
         });
-        h += '</tbody></table></div>';
+        h += '</ul>';
       }
       h += '<p class="small muted">المئين 50 = المتوسط. بين 3 و97 غالبًا ضمن الطبيعي. البرتقالي أو الأحمر: ناقشي القياس مع طبيب الطفل. المهم هو اتجاه النمو عبر الزمن.' +
         (E.ageInfo(c, today()).preterm ? ' القياسات قبل موعد الولادة المتوقع (40 أسبوعًا) يقيّمها الطبيب بمنحنيات خاصة بالخدج.' : '') + '</p>' +
@@ -756,7 +851,9 @@
     var done = S.milestones[c.id] || {};
     var h = '<section class="card tint"><h2>مراحل النمو</h2><p class="small">مهارات يبلغها معظم الأطفال (75% أو أكثر) في هذا العمر. ' +
       (a.useCorrected ? 'نستخدم العمر المصحح لأن طفلك وُلد مبكرًا. ' : '') +
-      'إذا لم يبلغ طفلك بعضها، أو فقد مهارة كان يتقنها، فتحدثي مع طبيب الطفل مبكرًا ولا تنتظري.</p>' + srcHtml(['cdc_milestones', 'aap_preemie']) + '</section>';
+      'إذا لم يبلغ طفلك بعضها، أو فقد مهارة كان يتقنها، فتحدثي مع طبيب الطفل مبكرًا ولا تنتظري.</p>' + srcHtml(['cdc_milestones', 'aap_preemie']) + '</section>' +
+      '<section class="card warn"><h2>متى أتحدث مع الطبيب فورًا؟</h2>' + plainList(['فقد مهارة كان يتقنها (كلمات، مشي، تواصل) في أي عمر', 'لا يتفاعل مع الأصوات العالية أو لا يلتفت لصوتك', 'لا ينظر في عينيك أو لا يتابع وجهك بعينيه', 'لم يبلغ عدة مهارات من المرحلة السابقة', 'قلقك أنتِ سبب كافٍ؛ أنتِ أعرف الناس بطفلك']) + srcHtml(['cdc_milestones']) + '</section>' +
+      (a.devMonths >= 16 && a.devMonths < 31 ? '<section class="card tint"><h2>فحص التوحد المبكر (M-CHAT-R/F)</h2><p class="small">استبيان من 20 سؤالًا تجيبين عنه في نحو 5 دقائق، يُنصح به عند 18 و24 شهرًا. النتيجة لا تشخّص، لكنها تحدد إن كان طفلك يحتاج تقييمًا. خذي النتيجة لطبيب الطفل.</p><a class="btn primary" href="' + esc(W.SOURCES.mchat.url) + '" target="_blank" rel="noopener">افتحي النسخة العربية الرسمية</a>' + srcHtml(['mchat']) + '</section>' : '');
     var cur = null;
     W.MILESTONES.forEach(function (b) { if (b.m <= a.devMonths + 0.01) cur = b.m; });
     W.MILESTONES.forEach(function (b) {
@@ -813,6 +910,8 @@
         '<section class="card"><h2>' + ic('food') + ' تغذيتك</h2>' + tipsHtml(W.MOTHER_GENERAL.feed) + '</section>' +
         '<section class="card"><h2>' + ic('heart') + ' رعايتك وصحتك النفسية</h2>' + tipsHtml(W.MOTHER_GENERAL.care) + '<button class="btn momb" data-action="checkin">اطمئني على حالتك النفسية</button></section>' +
         '<section class="card"><h2>' + ic('moon') + ' الرضاعة والصيام في رمضان</h2>' + tipsHtml(W.RAMADAN) + '</section>';
+      var allDates = datesList(c, false);
+      if (allDates.length) h += '<section class="card"><div class="head"><h2>' + ic('calendar') + ' مواعيدك ومواعيد طفلك</h2><button class="btn sm" data-action="icsdates">أضيفي للتقويم</button></div>' + datesHtml(allDates) + '</section>';
       if (mt.length) {
         h += '<section class="card mom"><h2>مساراتك الخاصة</h2>';
         mt.forEach(function (t) { h += '<details class="track"><summary>' + esc(t.title) + '</summary><div class="body"><p class="small muted">' + esc(t.reason) + '</p>' + tipsHtml(t.tips) + '</div></details>'; });
@@ -930,6 +1029,7 @@
         '<label class="check"><input type="checkbox" data-action="autonight"' + (st.autoNight ? ' checked' : '') + '>الوضع الليلي الدافئ تلقائيًا من 10 مساءً إلى 6 صباحًا</label>' +
         '<p class="hint">الوضع الليلي إضاءة خافتة دافئة تريح العين وقت الرضعات الليلية.</p></section>' +
         '<section class="card"><h2>حجم الخط</h2>' + choice('size', [['', 'عادي'], ['l', 'كبير'], ['xl', 'كبير جدًا']], st.size || '') + '</section>' +
+        '<section class="card"><h2>من يستخدم التطبيق على هذا الجهاز؟</h2>' + choice('caregiver', [['mom', 'الأم'], ['dad', 'الأب']], st.caregiver || 'mom') + '<p class="hint">في وضع الأب تختفي بطاقات صحة الأم من الصفحة الرئيسية، وتبقى كل نصائح الطفل.</p></section>' +
         '<section class="card"><h2>التاريخ</h2><label class="check"><input type="checkbox" data-action="hijri"' + (st.hijri !== false ? ' checked' : '') + '>إظهار التاريخ الهجري بجانب الميلادي</label></section>' +
         '<section class="card"><h2>بطاقات الصفحة الرئيسية</h2><p class="small muted">اختاري ما يظهر تحت أزرار التسجيل السريع.</p>' +
         [['day', 'ملخص آخر 24 ساعة'], ['vax', 'التطعيم القادم'], ['play', 'فكرة لعب اليوم'], ['mom', 'الاطمئنان على صحتك النفسية'], ['tracks', 'المسارات المخصصة']].map(function (o) {
@@ -1022,6 +1122,7 @@
     entry.id = W.Store.uid();
     entry.childId = child().id;
     S.logs.push(entry); save(); W.Store.persist();
+    try { if (navigator.vibrate) navigator.vibrate(18); } catch (e) { /* ignore */ }
     undoId = entry.id;
   }
   function download(name, text, type) {
@@ -1180,6 +1281,9 @@
         break;
       }
       case 'topic': view = 'guide'; sub.guide = 'topics'; sub.topic = el.getAttribute('data-id'); render(); var te = document.getElementById('t-' + sub.topic); if (te) te.scrollIntoView(); break;
+      case 'logfilter': sub.logFilter = el.getAttribute('data-val'); sub.logDays = 3; render(true); break;
+      case 'moredays': sub.logDays = (sub.logDays || 3) + 7; render(true); break;
+      case 'icsdates': download('mawaeed-' + c.name + '.ics', datesIcs(c), 'text/calendar'); toast('افتحي الملف لإضافة المواعيد إلى تقويمك'); break;
       case 'skip2': S.settings.needsProfile = false; save(); view = 'home'; render(); break;
       case 'complete': view = 'settings'; sub.settings = 'profile'; render(); window.scrollTo(0, 0); break;
       case 'homecard': { var k2 = el.getAttribute('data-k'); S.settings.homeCards = S.settings.homeCards || {}; S.settings.homeCards[k2] = S.settings.homeCards[k2] === false; save(); render(true); break; }
@@ -1192,6 +1296,7 @@
     var act = el.getAttribute('data-action');
     var c = child();
     if (el.name === 'theme' && view === 'settings') { S.settings.theme = el.value; save(); applyDisplay(); return; }
+    if (el.name === 'caregiver' && view === 'settings') { S.settings.caregiver = el.value; save(); toast('تم الحفظ'); return; }
     if (el.name === 'size' && view === 'settings') { S.settings.size = el.value; save(); applyDisplay(); return; }
     if (act === 'vitdtime') { S.settings.vitdTime = el.value; save(); return; }
     if (act === 'autonight') { S.settings.autoNight = el.checked; save(); applyDisplay(); return; }
@@ -1266,6 +1371,7 @@
       if (f.l_note && f.l_note.value) entry.note = f.l_note.value.trim();
       if (f.querySelector('[name=l_mood]')) entry.mood = +radio(f, 'l_mood');
       if (f.l_c) entry.c = +f.l_c.value;
+      if (f.l_sys) { entry.sys = +f.l_sys.value; entry.dia = +f.l_dia.value; }
       if (f.l_name) { entry.name = f.l_name.value.trim(); entry.dose = f.l_dose.value.trim(); }
       closeModal();
       if (editId) {
@@ -1274,8 +1380,9 @@
       } else {
         addLog(entry);
         var adv = type === 'temp' ? feverAdvice(E.ageInfo(c, today()).months, entry.c) : null;
+        if (type === 'mom_bp') adv = entry.sys >= 160 || entry.dia >= 110 ? { level: 'urgent', t: 'ضغطك ' + entry.sys + '/' + entry.dia + ': اذهبي للطوارئ فورًا أو اتصلي بـ 997.' } : entry.sys >= 140 || entry.dia >= 90 ? { level: 'watch', t: 'ضغطك مرتفع (' + entry.sys + '/' + entry.dia + '). تواصلي مع طبيبتك اليوم.' } : null;
         if (adv && adv.level === 'urgent') {
-          openModal('<div class="card danger"><h2>' + ic('alert') + ' ' + esc(adv.t) + '</h2><div class="grid2"><a class="btn dangerb" href="tel:997">الإسعاف 997</a><button class="btn" data-action="close">حسنًا</button></div><p class="small">رقم الإسعاف: 997</p>' + srcHtml(W.FEVER.src) + '</div>');
+          openModal('<div class="card danger"><h2>' + ic('alert') + ' ' + esc(adv.t) + '</h2><div class="grid2"><a class="btn dangerb" href="tel:997">الإسعاف 997</a><button class="btn" data-action="close">حسنًا</button></div><p class="small">رقم الإسعاف: 997</p>' + srcHtml(type === 'mom_bp' ? ['acog_postpartum'] : W.FEVER.src) + '</div>');
         } else toast(adv ? adv.t : 'تم الحفظ', !adv);
       }
       render(true);
@@ -1337,4 +1444,20 @@
   }
   applyDisplay();
   render();
+  /* اختصارات أيقونة التطبيق: ?do=breast مثلًا */
+  (function () {
+    var m = /[?&]do=([a-z_]+)/.exec(location.search);
+    if (!m || !S.children.length || S.settings.needsProfile || !T[m[1]]) return;
+    try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
+    var c0 = child();
+    if (m[1] === 'breast' && !timerOf(c0)) { var sd = nextSide(c0); startTimer('breast', sd); render(); toast('بدأ مؤقت الرضاعة — الثدي ' + SIDE[sd]); }
+    else if (m[1] === 'sleep' && !timerOf(c0)) { startTimer('sleep'); render(); toast('بدأ مؤقت النوم'); }
+    else openModal(logForm(m[1]));
+  })();
+  /* ما الجديد بعد التحديث (لا يظهر في أول استخدام) */
+  if (S.children.length && S.settings.seenVersion !== APP_VERSION) {
+    var firstRun = !S.settings.seenVersion && S.logs.length === 0;
+    S.settings.seenVersion = APP_VERSION; save();
+    if (!firstRun && !document.getElementById('modal').innerHTML) openModal('<div class="head"><h2>ما الجديد في هذا التحديث</h2><button type="button" class="x" data-action="close" aria-label="إغلاق">' + ic('x') + '</button></div>' + plainList(WHATS_NEW) + '<button class="btn primary block" data-action="close">حسنًا</button>');
+  }
 })();

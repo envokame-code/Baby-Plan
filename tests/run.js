@@ -39,7 +39,7 @@ test('every source id used in content and engine exists', function () {
   function grab(tips) { tips.forEach(function (t) { ids = ids.concat(t.src); }); }
   W.STAGES.forEach(function (s) { grab(s.feed); grab(s.move); grab(s.sleep); grab(s.care); });
   grab(W.MOTHER_GENERAL.move); grab(W.MOTHER_GENERAL.feed); grab(W.MOTHER_GENERAL.care);
-  ids = ids.concat(W.DANGER_BABY.src, W.DANGER_MOTHER.src, W.FEVER.src, W.FEED_CHECK.src, W.FEED_CHECK.weight.src, W.WHOOLEY.src);
+  ids = ids.concat(['nice_faltering', 'mchat'], W.DANGER_BABY.src, W.DANGER_MOTHER.src, W.FEVER.src, W.FEED_CHECK.src, W.FEED_CHECK.weight.src, W.WHOOLEY.src);
   grab(W.TEETH); grab(W.ALLERGY_TIPS); grab(W.RAMADAN); grab(W.SAFETY); grab(W.VACCINE_NOTES);
   W.PLAY.forEach(function (b) { ids = ids.concat(b.src); });
   W.TOPICS.forEach(function (tp) { grab(tp.tips); });
@@ -141,6 +141,25 @@ test('merge combines two devices without losing data', function () {
   assert.ok(r.state.milestones.a['2-move-0'] && r.state.milestones.a['2-move-1']);
   assert.strictEqual(r.state.mother.age, 30);
   assert.strictEqual(r.added.logs, 1);
+});
+
+test('weight trend alerts after falling two centile spaces, not for steady growth', function () {
+  var ch = { id: 'a', sex: 'm', dob: '2026-01-01', gaWeeks: 40, birthWeight: 3500 };
+  var low = E.growthTrend(ch, [{ childId: 'a', date: '2026-03-01', w: 4.6 }, { childId: 'a', date: '2026-05-01', w: 5.4 }], W.WHO_LMS);
+  assert.ok(low.alert && low.velocity.gPerDay === 13);
+  var ok = E.growthTrend(ch, [{ childId: 'a', date: '2026-03-01', w: 5.6 }, { childId: 'a', date: '2026-05-01', w: 7.0 }], W.WHO_LMS);
+  assert.ok(!ok.alert);
+  var newborn = E.growthTrend(ch, [{ childId: 'a', date: '2026-01-04', w: 3.2 }], W.WHO_LMS);
+  assert.ok(!newborn.alert, 'first 14 days ignored');
+});
+
+test('mother dates follow conditions and child age', function () {
+  var ch = { id: 'a', dob: '2026-01-01', gaWeeks: 40 };
+  var ids = E.motherDates({ conditions: ['gdm', 'htn'] }, ch).map(function (d) { return d.id; });
+  ['pnc1', 'pnc2', 'pnc3', 'bp', 'gtt', 'mchat18', 'mchat24'].forEach(function (k) { assert.ok(ids.indexOf(k) >= 0, k); });
+  var g = E.motherDates({ conditions: ['gdm'] }, ch).filter(function (d) { return d.id === 'gtt'; })[0];
+  assert.strictEqual(g.from, '2026-01-29'); assert.strictEqual(g.to, '2026-03-26');
+  assert.ok(E.motherDates({ conditions: [] }, ch).every(function (d) { return d.id !== 'gtt' && d.id !== 'bp'; }));
 });
 
 console.log('\n' + passed + ' tests passed');

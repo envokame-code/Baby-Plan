@@ -306,10 +306,56 @@
     return null;
   }
 
+  /* اتجاه الوزن على المنحنى (NICE): نزول خطّين مئويين (≈ 1.34 انحراف معياري) أو خط واحد إذا كان الوزن الأساسي تحت المئين 9.
+   * Weight trend: a "centile space" is ~0.67 SD. Measurements in the first 14 days and before term are ignored. */
+  function growthTrend(child, growth, lmsData) {
+    var info0 = ageInfo(child, child.dob);
+    var pts = (growth || []).filter(function (g) { return g.childId === child.id && g.w; }).map(function (g) {
+      var a = ageInfo(child, g.date);
+      return { date: g.date, w: +g.w, days: a.days, dm: a.devMonths, pre: a.preterm && a.correctedDays < 0 };
+    }).filter(function (p) { return !p.pre && p.days >= 0 && p.dm <= 60; }).sort(function (x, y) { return x.date < y.date ? -1 : 1; });
+    var res = { velocity: null, alert: false, spaces: 0 };
+    if (pts.length >= 2) {
+      var last = pts[pts.length - 1], prev = null;
+      for (var i = pts.length - 2; i >= 0; i--) { if (last.days - pts[i].days >= 7) { prev = pts[i]; break; } }
+      if (prev) res.velocity = { gPerDay: Math.round((last.w - prev.w) * 1000 / (last.days - prev.days)), days: last.days - prev.days };
+    }
+    var later = pts.filter(function (p) { return p.days >= 14; });
+    if (!later.length) return res;
+    var sex = child.sex === 'f' ? 'f' : 'm';
+    var baseZ = null;
+    if (child.birthWeight && !info0.preterm) baseZ = zScore(child.birthWeight / 1000, lmsAt(lmsData.wfa[sex], 0));
+    else if (pts.length >= 2) baseZ = zScore(pts[0].w, lmsAt(lmsData.wfa[sex], pts[0].dm));
+    if (baseZ === null) return res;
+    var cur = later[later.length - 1];
+    var curZ = zScore(cur.w, lmsAt(lmsData.wfa[sex], cur.dm));
+    res.spaces = (baseZ - curZ) / 0.67;
+    res.threshold = baseZ < -1.34 ? 1 : 2;
+    res.alert = res.spaces >= res.threshold;
+    return res;
+  }
+
+  /* مواعيد الأم الشخصية المحسوبة من تاريخ الولادة وحالتها الصحية */
+  function motherDates(mother, child) {
+    var mc = (mother && mother.conditions) || [];
+    var out = [];
+    function add(id, title, fromDay, toDay, src) { out.push({ id: id, title: title, from: addDays(child.dob, fromDay), to: addDays(child.dob, toDay), src: src }); }
+    add('pnc1', 'مراجعة ما بعد الولادة الأولى (لك ولطفلك)', 2, 3, ['who_pnc_2022']);
+    add('pnc2', 'مراجعة ما بعد الولادة الثانية', 7, 14, ['who_pnc_2022']);
+    add('pnc3', 'مراجعة الأسبوع السادس (تشمل صحتك النفسية ووسيلة منع الحمل)', 36, 42, ['who_pnc_2022']);
+    if (mc.indexOf('htn') >= 0) add('bp', 'قياس الضغط بعد الولادة (خلال 72 ساعة إن كان شديد الارتفاع)', 3, 10, ['acog_postpartum']);
+    if (mc.indexOf('gdm') >= 0) add('gtt', 'فحص السكر بعد سكر الحمل', 28, 84, ['acog_postpartum']);
+    var ga = +child.gaWeeks || 40;
+    var corr = ga < 37 ? Math.round((40 - ga) * 7) : 0;
+    add('mchat18', 'فحص التوحد المبكر لطفلك (M-CHAT-R/F) عند 18 شهرًا', Math.round(18 * DAYS_PER_MONTH) + corr, Math.round(19 * DAYS_PER_MONTH) + corr, ['mchat']);
+    add('mchat24', 'فحص التوحد المبكر لطفلك (M-CHAT-R/F) عند 24 شهرًا', Math.round(24 * DAYS_PER_MONTH) + corr, Math.round(25 * DAYS_PER_MONTH) + corr, ['mchat']);
+    return out;
+  }
+
   var api = {
     ageInfo: ageInfo, formatAge: formatAge, stageFor: stageFor, daysBetween: daysBetween,
     lmsAt: lmsAt, zScore: zScore, valueAtZ: valueAtZ, normCdf: normCdf, growthAssess: growthAssess,
-    buildTracks: buildTracks, nextVaccine: nextVaccine, addDays: addDays, vaccineDue: vaccineDue, DAYS_PER_MONTH: DAYS_PER_MONTH
+    buildTracks: buildTracks, nextVaccine: nextVaccine, addDays: addDays, vaccineDue: vaccineDue, growthTrend: growthTrend, motherDates: motherDates, DAYS_PER_MONTH: DAYS_PER_MONTH
   };
   root.Engine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

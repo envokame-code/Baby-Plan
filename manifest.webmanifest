@@ -34,5 +34,51 @@
       "type": "image/svg+xml",
       "purpose": "any"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "ابدئي رضاعة طبيعية",
+      "short_name": "رضاعة",
+      "url": "./index.html?do=breast",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "سجّلي حفاضًا",
+      "short_name": "حفاض",
+      "url": "./index.html?do=diaper",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "ابدئي مؤقت النوم",
+      "short_name": "نوم",
+      "url": "./index.html?do=sleep",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "رضّاعة",
+      "short_name": "رضّاعة",
+      "url": "./index.html?do=bottle",
+      "icons": [
+        {
+          "src": "icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }
