@@ -48,9 +48,9 @@
       ]
     },
     {
-      "name": "سجّلي حفاضًا",
-      "short_name": "حفاض",
-      "url": "./index.html?do=diaper",
+      "name": "سجّلي الحرارة",
+      "short_name": "حرارة",
+      "url": "./index.html?do=temp",
       "icons": [
         {
           "src": "icons/icon-192.png",

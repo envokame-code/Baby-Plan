@@ -23,17 +23,15 @@
     pump: { ico: 'pump', name: 'شفط الحليب', mom: true },
     solid: { ico: 'food', name: 'طعام' },
     sleep: { ico: 'moon', name: 'نوم', timer: true },
-    diaper: { ico: 'diaper', name: 'حفاض' },
     tummy: { ico: 'play', name: 'وقت البطن / لعب', timer: true },
     vitd: { ico: 'sun', name: 'فيتامين د' },
     temp: { ico: 'thermo', name: 'حرارة' },
     med: { ico: 'pill', name: 'دواء' },
     mom_move: { ico: 'walk', name: 'نشاط الأم', mom: true },
-    mom_mood: { ico: 'heart', name: 'مزاج الأم', mom: true },
     mom_bp: { ico: 'heart', name: 'ضغط الأم', mom: true }
   };
-  var APP_VERSION = '2026.11.3';
-  var WHATS_NEW = ['صفحة السجل: تصفية حسب النوع وملخص لكل يوم', 'رسوم أسبوعية أوضح، ونمط اليوم للنوم والرضاعة', 'تنبيه إذا نزل وزن الطفل على المنحنى، ومعدل زيادة الوزن', 'مواعيدك الشخصية بعد الولادة، وسجل ضغط الدم', 'تذكير بفحص التوحد المبكر عند 18 و24 شهرًا', 'وضع الأب، واختصارات على أيقونة التطبيق (أندرويد)', 'الخط محفوظ داخل التطبيق ويعمل دون إنترنت'];
+  var APP_VERSION = '2026.11.4';
+  var WHATS_NEW = ['تبسيط التطبيق: أزلنا سجل الحفاضات وسجل المزاج (الاطمئنان النفسي بقي في "كيف حالك؟")', 'أزلنا رسائل الاحتفال المنبثقة وروابط الإبلاغ لتقليل الازدحام', 'بطاقة "هل يرضع كفاية؟" في الأسابيع الستة الأولى بدل عدّ الحفاضات']
   function hasHtn() { return (S.mother.conditions || []).indexOf('htn') >= 0; }
   function isDad() { return S.settings.caregiver === 'dad'; }
 
@@ -76,21 +74,16 @@
     return S.children[0] || null;
   }
   function today() { return isoDate(); }
-  function srcHtml(ids, text) {
+  function srcHtml(ids) {
     if (!ids || !ids.length) return '';
     var list = ids.map(function (id) { return W.SOURCES[id]; }).filter(Boolean);
     if (!list.length) return '';
     return '<details class="src"><summary>' + ic('book') + 'المصدر' + (list.length > 1 ? ' (' + list.length + ')' : '') + '</summary><ul>' + list.map(function (s) {
       return '<li><a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.org) + ' — ' + esc(s.title) + '</a></li>';
-    }).join('') + (text ? '<li class="report"><a href="' + esc(reportUrl(text, list)) + '" target="_blank" rel="noopener">أبلغي عن خطأ في هذه المعلومة</a></li>' : '') + '</ul></details>';
+    }).join('') + '</ul></details>';
   }
   function tipsHtml(tips) {
-    return '<ul class="tips">' + tips.map(function (t) { return '<li>' + esc(t.t) + srcHtml(t.src, t.t) + '</li>'; }).join('') + '</ul>';
-  }
-  /* رابط الإبلاغ عن خطأ: يفتح طلبًا عامًا في GitHub دون أي بيانات شخصية */
-  function reportUrl(text, srcs) {
-    var body = 'النص:\n' + text + '\n\nالمصدر:\n' + srcs.map(function (x) { return x.org + ' — ' + x.title + '\n' + x.url; }).join('\n') + '\n\nما الخطأ؟\n';
-    return 'https://github.com/envokame-code/Baby-Plan/issues/new?title=' + encodeURIComponent('خطأ في معلومة') + '&body=' + encodeURIComponent(body.slice(0, 1500));
+    return '<ul class="tips">' + tips.map(function (t) { return '<li>' + esc(t.t) + srcHtml(t.src) + '</li>'; }).join('') + '</ul>';
   }
   function plainList(items, prefix) {
     return '<ul class="tips">' + items.map(function (i) { return '<li>' + (prefix || '') + esc(i) + '</li>'; }).join('') + '</ul>';
@@ -121,11 +114,6 @@
   }
   function disclaimer() {
     return '<p class="disclaimer">هذا التطبيق للتثقيف والمتابعة ولا يغني عن الطبيب. الطوارئ: 997 · الاستشارة الصحية: 937</p>';
-  }
-  function celebrate(title, detail) {
-    openModal('<div class="celebrate"><svg class="burst" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6v10M32 48v10M6 32h10M48 32h10M13 13l7 7M44 44l7 7M51 13l-7 7M20 44l-7 7"/><circle cx="32" cy="32" r="9"/></svg><h2>' + esc(title) + '</h2>' +
-      (detail ? '<p>' + esc(detail) + '</p>' : '') + '<p class="small muted">' + esc(fmtDateH(today())) + '</p>' +
-      '<div class="grid2"><button class="btn" data-action="close">رائع</button><button class="btn primary" data-action="firstfrom" data-t="' + esc(detail) + '">أضيفيها للحظات الأولى</button></div></div>');
   }
   function toast(msg, undo) {
     var t = document.getElementById('toast');
@@ -329,8 +317,6 @@
     var week = Date.now() - 7 * 86400000;
     return {
       feeds: last24(c, 'breast').length + last24(c, 'bottle').length,
-      wet: last24(c, 'diaper').filter(function (l) { return l.kind !== 'dirty'; }).length,
-      dirty: last24(c, 'diaper').filter(function (l) { return l.kind !== 'wet'; }).length,
       sleepMin: sumMin(last24(c, 'sleep')),
       tummy: sumMin(childLogs(c, 'tummy').filter(function (l) { return l.ts >= t0; })),
       vitd: childLogs(c, 'vitd').some(function (l) { return l.ts >= t0; }),
@@ -348,7 +334,6 @@
       W.FEED_CHECK.days.forEach(function (r) { if (day >= r.from && day <= r.to) rule = r; });
       var any = last24(c).length > 0;
       if (rule && any) {
-        if (sm.wet < rule.wet) out.push('الحفاضات المبللة في آخر 24 ساعة (' + sm.wet + ') أقل من المتوقع. ' + rule.t);
         if (sm.feeds < W.FEED_CHECK.feeds && last24(c, 'breast').length + last24(c, 'bottle').length > 0 && a.days >= 1) out.push('عدد الرضعات (' + sm.feeds + ') أقل من 8 في 24 ساعة.');
       }
     }
@@ -460,23 +445,31 @@
     var feedBtn = c.feeding === 'formula' ? quickBtn('bottle') : quickBtn('breast', 'التالي: ' + SIDE[ns]);
     var vitdNeeded = a.months < 12 && c.feeding !== 'formula';
     var formula = c.feeding === 'formula';
-    var cells = [feedBtn, quickBtn('diaper'), quickBtn('sleep'),
-      formula ? quickBtn('temp') : quickBtn('bottle'),
-      a.devMonths >= 12 ? quickBtn('tummy', '', 'لعب نشط') : quickBtn('tummy'),
-      a.devMonths >= 5 ? quickBtn('solid') : formula ? quickBtn('med') : quickBtn('pump'),
-      vitdNeeded ? quickBtn('vitd', sm.vitd ? 'تم اليوم ✓' : 'لم يُعطَ اليوم') : formula ? (isDad() ? quickBtn('med') : quickBtn('mom_mood')) : quickBtn('temp'),
-      isDad() ? quickBtn('temp') : hasHtn() && a.days < 84 ? quickBtn('mom_bp') : quickBtn('mom_move'),
-      '<button class="qa" data-action="go" data-view="log">' + ic('plus') + '<span>المزيد</span></button>'];
+    var want = ['sleep', formula ? 'temp' : 'bottle', 'tummy',
+      a.devMonths >= 5 ? 'solid' : formula ? 'med' : 'pump',
+      vitdNeeded ? 'vitd' : 'temp',
+      isDad() ? 'med' : (hasHtn() && a.days < 84 ? 'mom_bp' : 'mom_move'),
+      'temp', 'med', 'solid', 'bottle'];
+    var used = {}; used[formula ? 'bottle' : 'breast'] = 1;
+    var cells = [feedBtn];
+    want.forEach(function (k) {
+      if (!k || used[k] || cells.length >= 8) return; used[k] = 1;
+      cells.push(k === 'vitd' ? quickBtn('vitd', sm.vitd ? 'تم اليوم ✓' : 'لم يُعطَ اليوم') : k === 'tummy' && a.devMonths >= 12 ? quickBtn('tummy', '', 'لعب نشط') : quickBtn(k));
+    });
+    cells.push('<button class="qa" data-action="go" data-view="log">' + ic('plus') + '<span>المزيد</span></button>');
     h += '<section class="card" aria-label="تسجيل سريع"><div class="quick">' + cells.join('') + '</div>';
 
     /* since last */
-    var lf = lastLog(c, ['breast', 'bottle']), ld = lastLog(c, ['diaper']), ls = lastLog(c, ['sleep']);
-    h += '<div class="grid3 since">' +
+    var lf = lastLog(c, ['breast', 'bottle']), ls = lastLog(c, ['sleep']);
+    h += '<div class="grid2 since">' +
       '<div class="stat"><span>آخر رضعة</span><b class="small">' + (lf ? ago(lf.ts) : '—') + '</b>' + (lf && lf.type === 'breast' ? '<span>' + SIDE[lf.lastSide || lf.side] + '</span>' : '') + '</div>' +
-      '<div class="stat"><span>آخر حفاض</span><b class="small">' + (ld ? ago(ld.ts) : '—') + '</b></div>' +
       '<div class="stat"><span>استيقظ</span><b class="small">' + (timerOf(c) && timerOf(c).type === 'sleep' ? 'نائم الآن' : ls ? ago(endTs(ls)) : '—') + '</b></div>' +
       '</div></section>';
 
+    if (a.days <= 42 && c.feeding !== 'formula') {
+      var fr = null; W.FEED_CHECK.days.forEach(function (r) { if (a.days + 1 >= r.from && a.days + 1 <= r.to) fr = r; });
+      if (fr) h += '<section class="card"><h2>' + ic('breast') + ' هل يرضع كفاية اليوم؟</h2><p class="small">' + esc(fr.t) + ' مع 8 رضعات أو أكثر في 24 ساعة.</p><button class="btn sm ghost" data-action="go" data-view="guide" data-sub="baby">متى أراجع الطبيب؟</button>' + srcHtml(W.FEED_CHECK.src) + '</section>';
+    }
     var alerts = feedAlerts(c, a, sm);
     if (alerts.length) h += '<section class="card warn"><h2>' + ic('alert') + ' انتبهي</h2>' + plainList(alerts) + srcHtml(W.FEED_CHECK.src.concat(['weight_loss'])) + '</section>';
 
@@ -496,10 +489,10 @@
     if (on('day')) {
       var sr = sleepRange(a.devMonths);
       var activeGoal = a.devMonths < 12 ? 30 : 180;
-      h += '<details class="card fold"' + (sub.homeDay ? ' open' : '') + ' data-fold="homeDay"><summary class="head"><h2>آخر 24 ساعة</h2><span class="row small muted"><span>' + sm.feeds + ' رضعات</span><span>·</span><span>' + sm.wet + ' مبلل</span><span>·</span><span>' + num(sm.sleepMin / 60, 1) + ' س نوم</span></span></summary>' +
+      h += '<details class="card fold"' + (sub.homeDay ? ' open' : '') + ' data-fold="homeDay"><summary class="head"><h2>آخر 24 ساعة</h2><span class="row small muted"><span>' + sm.feeds + ' رضعات</span><span>·</span><span>' + num(sm.sleepMin / 60, 1) + ' س نوم</span></span></summary>' +
         '<div class="grid3">' +
         '<div class="stat"><b>' + sm.feeds + '</b><span>رضعات</span></div>' +
-        '<div class="stat"><b>' + sm.wet + '<small> / ' + sm.dirty + '</small></b><span>مبلل / براز</span></div>' +
+        '<div class="stat"><b>' + sm.tummy + '</b><span>' + (a.devMonths < 12 ? 'دقائق وقت البطن' : 'دقائق لعب نشط') + '</span></div>' +
         '<div class="stat"><b>' + num(sm.sleepMin / 60, 1) + '</b><span>ساعات نوم</span></div></div>' +
         '<div class="field"><div class="head small"><span>نوم (الموصى به ' + sr[0] + '–' + sr[1] + ' ساعة)</span><span class="num">' + num(sm.sleepMin / 60, 1) + '</span></div>' + meter(sm.sleepMin / 60, sr[0]) + '</div>' +
         '<div class="field"><div class="head small"><span>' + (a.devMonths < 12 ? 'وقت البطن اليوم (الهدف 30 د)' : 'لعب نشط اليوم (الهدف 180 د)') + '</span><span class="num">' + sm.tummy + ' د</span></div>' + meter(sm.tummy, activeGoal) + '</div>' +
@@ -559,13 +552,11 @@
       case 'pump': return (l.ml ? l.ml + ' مل' : '') + (l.side ? ' — ' + SIDE[l.side] : '');
       case 'solid': return (l.food || '') + (l.reaction ? ' — ⚠️ ' + l.reaction : '');
       case 'sleep': return l.minutes ? dur(l.minutes) + ' (حتى ' + fmtTime(endTs(l)) + ')' : '';
-      case 'diaper': return { wet: 'مبلل', dirty: 'براز', both: 'مبلل وبراز' }[l.kind] || '';
       case 'tummy': case 'mom_move': return dur(l.minutes || 0) + (l.note ? ' — ' + l.note : '');
       case 'vitd': return 'تم إعطاء الجرعة';
       case 'temp': return l.c ? l.c + '°' : '';
       case 'med': return (l.name || '') + (l.dose ? ' — ' + l.dose : '');
       case 'mom_bp': return (l.sys || '?') + '/' + (l.dia || '?') + ' ملم زئبق';
-      case 'mom_mood': return ['', 'صعب جدًا', 'صعب', 'متوسط', 'جيد', 'ممتاز'][l.mood || 3] + (l.note ? ' — ' + l.note : '');
     }
     return '';
   }
@@ -610,7 +601,7 @@
     });
     return s + '</svg><div class="legend"><span><i style="background:var(--primary)"></i>نوم</span><span><i style="background:var(--mom);border-radius:99px"></i>رضعة</span></div>';
   }
-  var LOG_FILTERS = [['all', 'الكل', null], ['feed', 'الرضاعة', ['breast', 'bottle', 'pump', 'solid']], ['sleep', 'النوم', ['sleep']], ['diaper', 'الحفاض', ['diaper']], ['health', 'الصحة', ['temp', 'med', 'vitd', 'tummy']], ['mom', 'الأم', ['mom_move', 'mom_mood', 'mom_bp', 'pump']]];
+  var LOG_FILTERS = [['all', 'الكل', null], ['feed', 'الرضاعة', ['breast', 'bottle', 'pump', 'solid']], ['sleep', 'النوم', ['sleep']], ['health', 'الصحة', ['temp', 'med', 'vitd', 'tummy']], ['mom', 'الأم', ['mom_move', 'mom_bp', 'pump']]];
   function vLog() {
     var c = child();
     var tab = sub.log || 'list';
@@ -624,12 +615,10 @@
       function per(types, fn) { return days.map(function (d) { return fn(childLogs(c).filter(function (l) { return types.indexOf(l.type) >= 0 && l.ts >= d && l.ts < d + 86400000; })); }); }
       var feeds = per(['breast', 'bottle'], function (x) { return x.length; });
       var sleep = per(['sleep'], function (x) { return sumMin(x) / 60; });
-      var wet = per(['diaper'], function (x) { return x.filter(function (l) { return l.kind !== 'dirty'; }).length; });
       var sr = sleepRange(a.devMonths);
       h += '<section class="card"><h2>نمط اليوم</h2><p class="small muted">كل سطر يوم كامل من منتصف الليل إلى منتصف الليل.</p>' + dayTimeline(c, days) + '</section>' +
         '<section class="card"><h2>الرضعات يوميًا</h2>' + barChart(days, feeds, 'عدد الرضعات', a.days <= 42 ? [8, 12] : null) + '</section>' +
-        '<section class="card"><h2>ساعات النوم يوميًا</h2>' + barChart(days, sleep, 'ساعات النوم', sr, 1) + srcHtml(['who_pa_u5']) + '</section>' +
-        '<section class="card"><h2>الحفاضات المبللة يوميًا</h2>' + barChart(days, wet, 'عدد الحفاضات المبللة', a.days <= 42 && a.days >= 5 ? [6, Math.max(8, Math.max.apply(null, wet))] : null) + '</section>';
+        '<section class="card"><h2>ساعات النوم يوميًا</h2>' + barChart(days, sleep, 'ساعات النوم', sr, 1) + srcHtml(['who_pa_u5']) + '</section>';
       return h;
     }
     var fk = sub.logFilter || 'all';
@@ -646,10 +635,9 @@
     order.slice(0, showDays).forEach(function (d, di) {
       var list = byDay[d];
       var fe = list.filter(function (l) { return l.type === 'breast' || l.type === 'bottle'; }).length;
-      var we = list.filter(function (l) { return l.type === 'diaper' && l.kind !== 'dirty'; }).length;
       var sl = sumMin(list.filter(function (l) { return l.type === 'sleep'; })) / 60;
       var sumBits = [];
-      if (fe) sumBits.push(fe + ' رضعات'); if (we) sumBits.push(we + ' مبلل'); if (sl) sumBits.push(num(sl, 1) + ' س نوم');
+      if (fe) sumBits.push(fe + ' رضعات'); if (sl) sumBits.push(num(sl, 1) + ' س نوم');
       if (!sumBits.length) sumBits.push(list.length + ' سجل');
       h += '<details class="card fold"' + (di === 0 ? ' open' : '') + '><summary class="head"><h2>' + (d === today() ? 'اليوم' : esc(fmtDate(d))) + '</h2><span class="small muted">' + esc(sumBits.join(' · ')) + '</span></summary><ul class="list">';
       list.forEach(function (l) {
@@ -709,9 +697,6 @@
         if (type !== 'sleep') h += field('l_note', 'ملاحظة (اختياري)', '<input id="l_note" name="l_note" maxlength="80" value="' + esc(e.note || '') + '" placeholder="' + (type === 'tummy' ? 'مثال: على البطن، لعب أرضي' : 'مثال: مشي، تمارين قاع الحوض') + '">');
         else h += '<p class="hint">النوم الآمن: على الظهر، سطح صلب، دون وسائد أو بطانيات.</p>';
         break;
-      case 'diaper':
-        h += '<div class="field"><label>النوع</label>' + choice('l_kind', [['wet', 'مبلل'], ['dirty', 'براز'], ['both', 'كلاهما']], e.kind || 'wet') + '</div>';
-        break;
       case 'temp':
         h += field('l_c', 'الحرارة (°م)', '<input id="l_c" name="l_c" type="number" inputmode="decimal" step="0.1" min="34" max="43" value="' + esc(e.c || '') + '" required>', W.FEVER.how);
         break;
@@ -725,11 +710,6 @@
         h += '<div class="grid2">' + field('l_sys', 'الانقباضي (العلوي)', '<input id="l_sys" name="l_sys" type="number" inputmode="numeric" min="60" max="260" value="' + esc(e.sys || '') + '" required>') +
           field('l_dia', 'الانبساطي (السفلي)', '<input id="l_dia" name="l_dia" type="number" inputmode="numeric" min="30" max="180" value="' + esc(e.dia || '') + '" required>') + '</div>' +
           '<p class="hint">قيسي وأنتِ جالسة مرتاحة 5 دقائق. 160/110 أو أعلى ← الطوارئ فورًا.</p>';
-        break;
-      case 'mom_mood':
-        h += '<div class="field"><label>كيف تشعرين اليوم؟</label>' + choice('l_mood', [['5', 'ممتاز'], ['4', 'جيد'], ['3', 'متوسط'], ['2', 'صعب'], ['1', 'صعب جدًا']], e.mood || '3') + '</div>' +
-          field('l_note', 'ملاحظة (اختياري)', '<input id="l_note" name="l_note" maxlength="120" value="' + esc(e.note || '') + '">') +
-          '<p class="hint">إذا استمر الحزن أو القلق أكثر من أسبوعين فاطلبي المساعدة (937). أفكار إيذاء النفس ← 997 فورًا.</p>';
         break;
     }
     return h + '<button class="btn primary block" type="submit">' + (e.id ? 'حفظ التعديل' : 'حفظ') + '</button></form>';
@@ -987,7 +967,6 @@
     var l7 = childLogs(c).filter(function (l) { return l.ts >= days7; });
     var feeds = l7.filter(function (l) { return l.type === 'breast' || l.type === 'bottle'; }).length / 7;
     var sleep = sumMin(l7.filter(function (l) { return l.type === 'sleep'; })) / 60 / 7;
-    var wet = l7.filter(function (l) { return l.type === 'diaper' && l.kind !== 'dirty'; }).length / 7;
     var g = S.growth.filter(function (x) { return x.childId === c.id; }).sort(function (p, q) { return p.date < q.date ? 1 : -1; })[0];
     var done = S.milestones[c.id] || {};
     var cur = null; W.MILESTONES.forEach(function (b) { if (b.m <= a.devMonths + 0.01) cur = b; });
@@ -1001,7 +980,7 @@
       '<div class="card"><h2>' + esc(c.name) + ' — ' + (c.sex === 'f' ? 'أنثى' : 'ذكر') + '</h2><p>تاريخ الولادة: ' + esc(fmtDateH(c.dob)) + ' · العمر: ' + esc(E.formatAge(a.days)) + (a.useCorrected ? ' (المصحح: ' + esc(E.formatAge(Math.max(0, a.correctedDays))) + ')' : '') + '</p>' +
       '<p class="small">أسبوع الولادة: ' + esc(c.gaWeeks) + ' · وزن الولادة: ' + (c.birthWeight ? esc(c.birthWeight) + ' غ' : '—') + ' · الولادة: ' + esc((DELIVERY.filter(function (d) { return d[0] === c.delivery; })[0] || ['', '—'])[1]) + ' · الرضاعة: ' + esc((FEEDING.filter(function (d) { return d[0] === c.feeding; })[0] || ['', '—'])[1]) + '</p></div>' +
       '<div class="card"><h2>آخر قياس' + (g ? ' (' + esc(fmtDate(g.date)) + ')' : '') + '</h2>' + (g && beforeTerm(c, g.date) ? '<p>آخر قياس قبل موعد الولادة المتوقع؛ يقيّمه الطبيب بمنحنيات الخدج.</p>' : g ? '<p>الوزن: ' + gcell('wfa', g.w, 'كغ') + '<br>الطول: ' + gcell('lhfa', g.l, 'سم') + '<br>محيط الرأس: ' + gcell('hcfa', g.hc, 'سم') + '</p>' : '<p class="muted">لا يوجد.</p>') + '</div>' +
-      '<div class="card"><h2>متوسط آخر 7 أيام</h2><p>رضعات: ' + num(feeds, 1) + ' يوميًا · نوم: ' + num(sleep, 1) + ' ساعة · حفاضات مبللة: ' + num(wet, 1) + '</p>' + (temps.length ? '<p>قياسات حرارة: ' + temps.map(function (t) { return esc(t.c) + '°'; }).join('، ') + '</p>' : '') + '</div>' +
+      '<div class="card"><h2>متوسط آخر 7 أيام</h2><p>رضعات: ' + num(feeds, 1) + ' يوميًا · نوم: ' + num(sleep, 1) + ' ساعة</p>' + (temps.length ? '<p>قياسات حرارة: ' + temps.map(function (t) { return esc(t.c) + '°'; }).join('، ') + '</p>' : '') + '</div>' +
       '<div class="card"><h2>مهارات المرحلة الحالية غير المعلَّمة' + (cur ? ' (عمر ' + cur.m + ' شهرًا)' : '') + '</h2>' + (missing.length ? plainList(missing) : '<p class="muted">لا شيء.</p>') + '</div>' +
       '<div class="card"><h2>التطعيمات المستحقة حتى الآن</h2>' + plainList(vax) + '</div>' +
       '<div class="card"><h2>أسئلتي</h2>' + plainList(S.notes.filter(function (n) { return n.childId === c.id && !n.done; }).map(function (n) { return n.text; })) + '</div>' +
@@ -1274,7 +1253,6 @@
         break;
       }
       case 'addfirst': openModal(firstForm('')); break;
-      case 'firstfrom': closeModal(); openModal(firstForm(el.getAttribute('data-t') || '')); break;
       case 'delfirst': {
         var fid = el.getAttribute('data-id');
         confirmSheet('حذف هذه اللحظة وصورتها؟', 'حذف', function () { S.firsts = S.firsts.filter(function (f) { return f.id !== fid; }); Photos.del(fid).catch(function () {}); save(); render(true); });
@@ -1305,7 +1283,7 @@
       if (el.checked) S.milestones[c.id][el.getAttribute('data-k')] = today(); else delete S.milestones[c.id][el.getAttribute('data-k')];
       var msTxt = el.closest('label') ? el.closest('label').textContent.trim() : '';
       save(); render(true);
-      if (el.checked) celebrate(c.name + ' حقق مهارة جديدة!', msTxt);
+      if (el.checked) toast('رائع! ' + c.name + ': ' + msTxt);
     } else if (act === 'vax') {
       S.vaccines[c.id] = S.vaccines[c.id] || {};
       if (el.checked) S.vaccines[c.id][el.getAttribute('data-m')] = today(); else delete S.vaccines[c.id][el.getAttribute('data-m')];
@@ -1367,9 +1345,7 @@
       if (f.querySelector('[name=l_side]')) entry.side = radio(f, 'l_side');
       if (f.l_food) entry.food = f.l_food.value.trim();
       if (f.l_reaction && f.l_reaction.value.trim()) entry.reaction = f.l_reaction.value.trim();
-      if (f.querySelector('[name=l_kind]')) entry.kind = radio(f, 'l_kind');
       if (f.l_note && f.l_note.value) entry.note = f.l_note.value.trim();
-      if (f.querySelector('[name=l_mood]')) entry.mood = +radio(f, 'l_mood');
       if (f.l_c) entry.c = +f.l_c.value;
       if (f.l_sys) { entry.sys = +f.l_sys.value; entry.dia = +f.l_dia.value; }
       if (f.l_name) { entry.name = f.l_name.value.trim(); entry.dose = f.l_dose.value.trim(); }
