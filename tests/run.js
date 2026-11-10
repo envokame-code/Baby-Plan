@@ -10,7 +10,7 @@ var assert = require('assert');
 var ctx = { window: {}, console: console };
 ctx.globalThis = ctx;
 vm.createContext(ctx);
-['js/data/sources.js', 'js/data/growth.js', 'js/data/milestones.js', 'js/data/vaccines.js', 'js/data/content.js', 'js/data/extra.js', 'js/engine.js']
+['js/data/sources.js', 'js/data/growth.js', 'js/data/milestones.js', 'js/data/vaccines.js', 'js/data/content.js', 'js/data/extra.js', 'js/data/topics.js', 'js/engine.js']
   .forEach(function (f) { vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), ctx, { filename: f }); });
 var W = ctx.window, E = W.Engine;
 var passed = 0;
@@ -42,6 +42,7 @@ test('every source id used in content and engine exists', function () {
   ids = ids.concat(W.DANGER_BABY.src, W.DANGER_MOTHER.src, W.FEVER.src, W.FEED_CHECK.src, W.FEED_CHECK.weight.src, W.WHOOLEY.src);
   grab(W.TEETH); grab(W.ALLERGY_TIPS); grab(W.RAMADAN); grab(W.SAFETY); grab(W.VACCINE_NOTES);
   W.PLAY.forEach(function (b) { ids = ids.concat(b.src); });
+  W.TOPICS.forEach(function (tp) { grab(tp.tips); });
   var engineSrc = fs.readFileSync(path.join(__dirname, '..', 'js/engine.js'), 'utf8');
   var re = /'([a-z0-9_]+)'/g, m;
   var known = Object.keys(W.SOURCES);
@@ -120,6 +121,26 @@ test('import migration cleans unsafe ids and non-numeric values, and upgrades v1
   assert.strictEqual(bad.growth[0].w, null);
   assert.strictEqual(bad.v, 2);
   assert.ok(bad.settings && Array.isArray(bad.notes) && bad.timers && bad.allergens);
+});
+
+test('merge combines two devices without losing data', function () {
+  var sctx = { window: { localStorage: { getItem: function () { return null; } } } };
+  vm.createContext(sctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js/store.js'), 'utf8'), sctx);
+  var St = sctx.window.Store;
+  var mom = { mother: { age: 30, conditions: [] }, children: [{ id: 'a', name: 'ليان', dob: '2026-01-01' }], activeId: 'a',
+    logs: [{ id: 'l1', childId: 'a', type: 'diaper', ts: 1 }], growth: [], milestones: { a: { '2-move-0': '2026-03-01' } } };
+  var dad = { mother: {}, children: [{ id: 'x', name: 'ليان', dob: '2026-01-01' }, { id: 'y', name: 'سلمان', dob: '2024-01-01' }], activeId: 'x',
+    logs: [{ id: 'l1', childId: 'x', type: 'diaper', ts: 1 }, { id: 'l2', childId: 'x', type: 'breast', ts: 2 }], growth: [{ id: 'g', childId: 'x', date: '2026-02-01', w: 4 }],
+    milestones: { x: { '2-move-1': '2026-03-02' } } };
+  var r = St.merge(mom, dad);
+  assert.strictEqual(r.state.children.length, 2);
+  assert.strictEqual(r.state.logs.length, 2);
+  assert.ok(r.state.logs.every(function (l) { return l.childId === 'a'; }));
+  assert.strictEqual(r.state.growth[0].childId, 'a');
+  assert.ok(r.state.milestones.a['2-move-0'] && r.state.milestones.a['2-move-1']);
+  assert.strictEqual(r.state.mother.age, 30);
+  assert.strictEqual(r.added.logs, 1);
 });
 
 console.log('\n' + passed + ' tests passed');

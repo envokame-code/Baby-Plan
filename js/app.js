@@ -47,6 +47,12 @@
     if (typeof d === 'string') d = new Date(d.length === 10 ? d + 'T00:00:00' : d);
     return d.toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' });
   }
+  function fmtHijri(d) {
+    if (typeof d === 'string') d = new Date(d.length === 10 ? d + 'T12:00:00' : d);
+    try { return d.toLocaleDateString('ar-SA-u-ca-islamic-umalqura-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' }); } catch (e) { return ''; }
+  }
+  /* التاريخ الميلادي مع الهجري (إذا فُعّل في الإعدادات) */
+  function fmtDateH(d) { var g = fmtDate(d); return S.settings.hijri === false ? g : g + ' · ' + fmtHijri(d); }
   function fmtShort(d) { return new Date(d).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { weekday: 'short', day: 'numeric' }); }
   function num(v, dp) { var p = Math.pow(10, dp || 0); return (Math.round(v * p) / p).toString(); }
   function ago(ts) {
@@ -67,11 +73,11 @@
   function today() { return isoDate(); }
   function srcHtml(ids) {
     if (!ids || !ids.length) return '';
-    return '<div class="src">المصدر: ' + ids.map(function (id) {
-      var s = W.SOURCES[id];
-      if (!s) return '';
-      return '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.org) + ' — ' + esc(s.title) + '</a>';
-    }).join(' · ') + '</div>';
+    var list = ids.map(function (id) { return W.SOURCES[id]; }).filter(Boolean);
+    if (!list.length) return '';
+    return '<details class="src"><summary>' + ic('book') + 'المصدر' + (list.length > 1 ? ' (' + list.length + ')' : '') + '</summary><ul>' + list.map(function (s) {
+      return '<li><a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.org) + ' — ' + esc(s.title) + '</a></li>';
+    }).join('') + '</ul></details>';
   }
   function tipsHtml(tips) {
     return '<ul class="tips">' + tips.map(function (t) { return '<li>' + esc(t.t) + srcHtml(t.src) + '</li>'; }).join('') + '</ul>';
@@ -106,6 +112,11 @@
   function disclaimer() {
     return '<p class="disclaimer">هذا التطبيق للتثقيف والمتابعة ولا يغني عن الطبيب. الطوارئ: 997 · الاستشارة الصحية: 937</p>';
   }
+  function celebrate(title, detail) {
+    openModal('<div class="celebrate"><svg class="burst" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6v10M32 48v10M6 32h10M48 32h10M13 13l7 7M44 44l7 7M51 13l-7 7M20 44l-7 7"/><circle cx="32" cy="32" r="9"/></svg><h2>' + esc(title) + '</h2>' +
+      (detail ? '<p>' + esc(detail) + '</p>' : '') + '<p class="small muted">' + esc(fmtDateH(today())) + '</p>' +
+      '<div class="grid2"><button class="btn" data-action="close">رائع</button><button class="btn primary" data-action="firstfrom" data-t="' + esc(detail) + '">أضيفيها للحظات الأولى</button></div></div>');
+  }
   function toast(msg, undo) {
     var t = document.getElementById('toast');
     t.hidden = false;
@@ -121,6 +132,88 @@
     return best;
   }
   function endTs(l) { return l.ts + (l.minutes || 0) * 60000; }
+
+  /* ---------- صور اللحظات الأولى (IndexedDB على الجهاز فقط) ---------- */
+  var Photos = (function () {
+    var dbp = null;
+    function db() {
+      if (dbp) return dbp;
+      dbp = new Promise(function (res, rej) {
+        try {
+          var r = indexedDB.open('babyplan-photos', 1);
+          r.onupgradeneeded = function () { r.result.createObjectStore('p'); };
+          r.onsuccess = function () { res(r.result); };
+          r.onerror = function () { rej(r.error); };
+        } catch (e) { rej(e); }
+      });
+      return dbp;
+    }
+    function tx(mode, fn) { return db().then(function (d) { return new Promise(function (res, rej) { var t = d.transaction('p', mode); var q = fn(t.objectStore('p')); t.oncomplete = function () { res(q && q.result); }; t.onerror = function () { rej(t.error); }; }); }); }
+    return {
+      put: function (id, blob) { return tx('readwrite', function (st) { return st.put(blob, id); }); },
+      get: function (id) { return tx('readonly', function (st) { return st.get(id); }); },
+      del: function (id) { return tx('readwrite', function (st) { return st.delete(id); }); }
+    };
+  })();
+  function resizeImage(file, max) {
+    return new Promise(function (res, rej) {
+      var url = URL.createObjectURL(file); var img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, max / Math.max(img.width, img.height));
+        var cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+        cv.toBlob(function (b) { b ? res(b) : rej(new Error('blob')); }, 'image/jpeg', 0.82);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); rej(new Error('img')); };
+      img.src = url;
+    });
+  }
+  function loadPhotos() {
+    [].forEach.call(document.querySelectorAll('img[data-photo]'), function (im) {
+      Photos.get(im.getAttribute('data-photo')).then(function (b) { if (b) { im.src = URL.createObjectURL(b); im.hidden = false; var ph = im.nextElementSibling; if (ph) ph.hidden = true; } }).catch(function () { /* ignore */ });
+    });
+  }
+  var FIRST_SUGGEST = ['أول ابتسامة', 'أول ضحكة', 'أول تقلّب', 'أول جلوس', 'أول سن', 'أول طعام', 'أول حبو', 'أول وقوف', 'أول خطوة', 'أول كلمة'];
+  function firstForm(title) {
+    return '<form class="form" data-form="first"><div class="head"><h2>لحظة أولى جديدة</h2><button type="button" class="x" data-action="close" aria-label="إغلاق">' + ic('x') + '</button></div>' +
+      field('f_title', 'ماذا حدث؟', '<input id="f_title" name="f_title" maxlength="80" required list="firstlist" value="' + esc(title || '') + '">') +
+      '<datalist id="firstlist">' + FIRST_SUGGEST.map(function (x) { return '<option value="' + x + '">'; }).join('') + '</datalist>' +
+      field('f_date', 'التاريخ', '<input id="f_date" name="f_date" type="date" max="' + today() + '" value="' + today() + '" required>') +
+      field('f_note', 'ملاحظة (اختياري)', '<input id="f_note" name="f_note" maxlength="140">') +
+      field('f_photo', 'صورة (اختياري)', '<input id="f_photo" name="f_photo" type="file" accept="image/*">', 'الصور تُحفظ على هذا الجهاز فقط ولا تدخل في النسخة الاحتياطية.') +
+      '<button class="btn primary block" type="submit">حفظ</button></form>';
+  }
+
+  /* ---------- البحث في الدليل ---------- */
+  var searchIndex = null;
+  function buildIndex() {
+    var out = [];
+    function add(where, tips, go) { (tips || []).forEach(function (t) { out.push({ t: t.t || t, src: t.src || [], where: where, go: go }); }); }
+    W.STAGES.forEach(function (st) { ['feed', 'move', 'sleep', 'care'].forEach(function (k) { add('دليل الطفل — ' + st.name, st[k], ['guide', 'baby', st.id]); }); });
+    add('دليل الأم', W.MOTHER_GENERAL.move.concat(W.MOTHER_GENERAL.feed, W.MOTHER_GENERAL.care), ['guide', 'mother']);
+    add('الرضاعة في رمضان', W.RAMADAN, ['guide', 'mother']);
+    add('الطعام والحساسية', W.ALLERGY_TIPS, ['guide', 'food']);
+    add('السلامة', W.SAFETY, ['guide', 'safety']);
+    add('الأسنان', W.TEETH, ['growth', 'teeth']);
+    add('الحمى', W.FEVER.rules.map(function (r) { return { t: r.t, src: W.FEVER.src }; }).concat(W.FEVER.red.map(function (r) { return { t: r, src: W.FEVER.src }; })), ['care', 'fever']);
+    add('هل يرضع كفاية؟', W.FEED_CHECK.days.map(function (d) { return { t: d.t, src: W.FEED_CHECK.src }; }).concat(W.FEED_CHECK.warn.map(function (d) { return { t: d, src: W.FEED_CHECK.src }; })), ['guide', 'baby', 's0']);
+    add('التطعيمات', W.VACCINE_NOTES, ['care', 'vax']);
+    add('علامات الخطر لدى الطفل', W.DANGER_BABY.items.map(function (d) { return { t: d, src: W.DANGER_BABY.src }; }), ['care', 'danger']);
+    add('علامات الخطر لدى الأم', W.DANGER_MOTHER.items.map(function (d) { return { t: d, src: W.DANGER_MOTHER.src }; }), ['care', 'danger']);
+    (W.TOPICS || []).forEach(function (tp) { add(tp.title, tp.tips, ['guide', 'topics', tp.id]); });
+    return out;
+  }
+  function norm(x) { return String(x).replace(/[\u064B-\u0652\u0640]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').toLowerCase(); }
+  function searchHtml(q) {
+    q = q.trim(); if (q.length < 2) return '';
+    if (!searchIndex) searchIndex = buildIndex();
+    var words = norm(q).split(/\s+/).filter(Boolean);
+    var hits = searchIndex.filter(function (it) { var n = norm(it.t + ' ' + it.where); return words.every(function (w) { return n.indexOf(w) >= 0; }); }).slice(0, 30);
+    if (!hits.length) return '<p class="muted small" style="text-align:center">لا توجد نتائج. جرّبي كلمة أخرى مثل "حرارة" أو "نوم".</p>';
+    return '<p class="small muted">' + hits.length + ' نتيجة</p><ul class="tips">' + hits.map(function (h) {
+      return '<li><span class="chip">' + esc(h.where) + '</span><div>' + esc(h.t) + '</div>' + srcHtml(h.src) + '</li>';
+    }).join('') + '</ul>';
+  }
 
   /* ---------- profile forms ---------- */
   function motherFields(m) {
@@ -263,11 +356,44 @@
 
   /* ---------- onboarding ---------- */
   function vOnboard() {
-    return '<section class="card tint"><h1>أهلًا بك في "خطة طفلي"</h1>' +
-      '<p>رفيقك لمتابعة رضاعة طفلك ونومه ونموه وحركته وتطعيماته من الولادة حتى 4 سنوات، مع مسارات مخصصة لك حسب نوع الولادة وجنس الطفل وعمرك وعدد الولادات وحالتك الصحية.</p>' +
-      '<p class="small muted">كل نصيحة مأخوذة من جهة معتمدة (منظمة الصحة العالمية، وزارة الصحة السعودية، CDC، AAP، NHS، NICE) ومعها رابط مصدرها. بياناتك تبقى على جهازك فقط.</p></section>' +
-      '<form class="card" data-form="onboard">' + motherFields(S.mother) + '<hr style="border:0;border-top:1px solid var(--line);margin:6px 0">' + childFields(null, true) +
-      '<button class="btn primary block" type="submit">ابدئي</button></form>' + disclaimer();
+    return '<section class="card tint"><div class="hero"><div class="art">' + stageArt(0) + '</div><div class="who"><h1>أهلًا بك في "خطة طفلي"</h1>' +
+      '<p class="small">تابعي رضاعة طفلك ونومه ونموه وتطعيماته حتى عمر 4 سنوات، بنصائح من جهات معتمدة. بياناتك تبقى على جهازك فقط.</p></div></div></section>' +
+      '<form class="card form" data-form="onboard"><div class="head"><h2>الخطوة 1 من 2: طفلك</h2><span class="chip">دقيقة واحدة</span></div>' +
+      field('c_name', 'اسم الطفل', '<input id="c_name" name="c_name" required maxlength="40" autocomplete="off">') +
+      '<div class="field"><label>الجنس</label>' + choice('c_sex', [['m', 'ذكر'], ['f', 'أنثى']], '') + '</div>' +
+      field('c_dob', 'تاريخ الولادة', '<input id="c_dob" name="c_dob" type="date" max="' + today() + '" required>') +
+      '<div class="field"><label>الرضاعة الحالية</label>' + choice('c_feed', FEEDING, 'breast') + '</div>' +
+      '<button class="btn primary block" type="submit">التالي</button>' +
+      '<label class="btn ghost block" style="margin:0">لديك نسخة احتياطية؟ استعيديها<input type="file" accept="application/json,.json" data-action="import" class="sr"></label></form>' + disclaimer();
+  }
+  function vOnboard2() {
+    var c = child();
+    return '<section class="card tint"><h1>الخطوة 2 من 2: لنخصص النصائح لك</h1><p class="small">هذه المعلومات تبني مساراتك المخصصة (نوع الولادة، عمرك، عدد الولادات، صحتك وصحة طفلك). يمكنك إكمالها لاحقًا من الإعدادات.</p></section>' +
+      '<form class="card form" data-form="onboard2">' + birthFields(c) + '<hr style="border:0;border-top:1px solid var(--line);margin:6px 0">' + motherFields(S.mother) +
+      '<label class="check"><input type="checkbox" name="c_vaxdone" checked>أخذ طفلي كل التطعيمات المستحقة حتى اليوم</label>' +
+      '<button class="btn primary block" type="submit">حفظ وابدئي</button><button class="btn ghost block" type="button" data-action="skip2">لاحقًا</button></form>';
+  }
+  function birthFields(c) {
+    c = c || {};
+    return '<div class="form"><h2>عن الولادة</h2><div class="grid2">' +
+      field('c_ga', 'أسبوع الولادة', '<input id="c_ga" name="c_ga" type="number" inputmode="numeric" min="22" max="44" value="' + esc(c.gaWeeks || 40) + '">', 'أقل من 37 = خديج') +
+      field('c_bw', 'وزن الولادة (غرام)', '<input id="c_bw" name="c_bw" type="number" inputmode="numeric" min="300" max="7000" value="' + esc(c.birthWeight || '') + '">') + '</div>' +
+      field('c_del', 'نوع الولادة', '<select id="c_del" name="c_del">' + opts([['', 'اختاري']].concat(DELIVERY), c.delivery || '') + '</select>') +
+      '<label class="check"><input type="checkbox" name="c_multi"' + (c.multiple ? ' checked' : '') + '>ولادة توائم</label>' +
+      '<div class="field"><label>حالة الطفل الصحية</label>' + checks('c_cond', CHILD_CONDS, c.conditions) + '</div></div>';
+  }
+  function profileIncomplete(c) { return !c.delivery || !S.mother.age; }
+
+  /* رسومات بسيطة لوضعية الطفل في كل مرحلة */
+  function stageArt(m) {
+    /* [رأس x, رأس y, مسار الجسم, مستوى الأرض] */
+    var P = m < 3 ? [14, 39, 'M22 41h22M30 41l2-10M38 41l-1-10M44 41l6-9M44 41l10-5', 48] :
+      m < 6 ? [44, 30, 'M38 37 16 42M16 42H6M38 37l3 11M33 39l1 9', 49] :
+      m < 9 ? [30, 15, 'M30 23v18M30 41l14 3h8M30 28l-8 9M30 28l9 7', 47] :
+      m < 12 ? [48, 24, 'M42 30H20M42 30l2 18M20 30l-3 18H8M35 30l2 18', 50] :
+      m < 24 ? [32, 11, 'M32 19v20M32 39l-6 17M32 39l6 17M32 25l-9 8M32 25l9 7', 58] :
+      [36, 11, 'M34 19l-4 18M30 37l-11 9-3 10M30 37l10 9-1 10M33 25l-10 2M33 25l11 7', 58];
+    return '<svg class="pose" viewBox="0 0 64 64" aria-hidden="true"><path class="ground" d="M4 ' + P[3] + 'h56"/><circle cx="' + P[0] + '" cy="' + P[1] + '" r="7"/><path d="' + P[2] + '"/></svg>';
   }
 
   /* ---------- home ---------- */
@@ -292,7 +418,7 @@
       }).join('') + '</div>';
     }
     h += timerBanner(c);
-    h += '<section class="card tint"><div class="hero"><div class="avatar">' + ic('child') + '</div><div class="who"><h2>' + esc(c.name) + '</h2><div class="row">' + ageLine(c) + '</div>' +
+    h += '<section class="card tint"><div class="hero"><div class="art">' + stageArt(a.devMonths) + '</div><div class="who"><h2>' + esc(c.name) + '</h2><div class="row">' + ageLine(c) + '</div>' +
       '<div class="row"><span class="chip baby">' + esc(stage.name) + '</span>' + (a.days < 84 ? '<span class="chip mom">الأسبوع ' + (a.weeksPostpartum + 1) + ' بعد الولادة</span>' : '') + '</div></div></div></section>';
 
     /* quick actions */
@@ -307,66 +433,81 @@
       vitdNeeded ? quickBtn('vitd', sm.vitd ? 'تم اليوم ✓' : 'لم يُعطَ اليوم') : formula ? quickBtn('mom_mood') : quickBtn('temp'),
       quickBtn('mom_move'),
       '<button class="qa" data-action="go" data-view="log">' + ic('plus') + '<span>المزيد</span></button>'];
-    h += '<section class="card" aria-label="تسجيل سريع"><div class="quick">' + cells.join('') + '</div></section>';
+    h += '<section class="card" aria-label="تسجيل سريع"><div class="quick">' + cells.join('') + '</div>';
 
     /* since last */
     var lf = lastLog(c, ['breast', 'bottle']), ld = lastLog(c, ['diaper']), ls = lastLog(c, ['sleep']);
-    h += '<section class="card"><h2>منذ آخر مرة</h2><div class="grid3">' +
-      '<div class="stat"><span>رضعة</span><b class="small">' + (lf ? ago(lf.ts) : '—') + '</b>' + (lf && lf.type === 'breast' ? '<span>' + SIDE[lf.lastSide || lf.side] + '</span>' : '') + '</div>' +
-      '<div class="stat"><span>حفاض</span><b class="small">' + (ld ? ago(ld.ts) : '—') + '</b></div>' +
+    h += '<div class="grid3 since">' +
+      '<div class="stat"><span>آخر رضعة</span><b class="small">' + (lf ? ago(lf.ts) : '—') + '</b>' + (lf && lf.type === 'breast' ? '<span>' + SIDE[lf.lastSide || lf.side] + '</span>' : '') + '</div>' +
+      '<div class="stat"><span>آخر حفاض</span><b class="small">' + (ld ? ago(ld.ts) : '—') + '</b></div>' +
       '<div class="stat"><span>استيقظ</span><b class="small">' + (timerOf(c) && timerOf(c).type === 'sleep' ? 'نائم الآن' : ls ? ago(endTs(ls)) : '—') + '</b></div>' +
       '</div></section>';
-
-    /* 24h */
-    var sr = sleepRange(a.devMonths);
-    var activeGoal = a.devMonths < 12 ? 30 : 180;
-    h += '<section class="card"><div class="head"><h2>آخر 24 ساعة</h2><button class="btn sm" data-action="go" data-view="log">السجل الكامل</button></div>' +
-      '<div class="grid3">' +
-      '<div class="stat"><b>' + sm.feeds + '</b><span>رضعات</span></div>' +
-      '<div class="stat"><b>' + sm.wet + '<small> / ' + sm.dirty + '</small></b><span>مبلل / براز</span></div>' +
-      '<div class="stat"><b>' + num(sm.sleepMin / 60, 1) + '</b><span>ساعات نوم</span></div></div>' +
-      '<div class="field"><div class="head small"><span>نوم (الموصى به ' + sr[0] + '–' + sr[1] + ' ساعة)</span><span class="num">' + num(sm.sleepMin / 60, 1) + '</span></div>' + meter(sm.sleepMin / 60, sr[0]) + '</div>' +
-      '<div class="field"><div class="head small"><span>' + (a.devMonths < 12 ? 'وقت البطن اليوم (الهدف 30 د)' : 'لعب نشط اليوم (الهدف 180 د)') + '</span><span class="num">' + sm.tummy + ' د</span></div>' + meter(sm.tummy, activeGoal) + '</div>' +
-      '<div class="field"><div class="head small"><span>نشاطك هذا الأسبوع (الهدف 150 د)</span><span class="num">' + sm.momMin + ' د</span></div>' + meter(sm.momMin, 150, 'mom') + '</div>' +
-      '</section>';
 
     var alerts = feedAlerts(c, a, sm);
     if (alerts.length) h += '<section class="card warn"><h2>' + ic('alert') + ' انتبهي</h2>' + plainList(alerts) + srcHtml(W.FEED_CHECK.src.concat(['weight_loss'])) + '</section>';
 
+    var nowTopic = a.days < 14 ? 'screening' : (a.days < 120 ? 'crying' : null);
+    var tpObj = nowTopic && (W.TOPICS || []).filter(function (t) { return t.id === nowTopic; })[0];
+    if (tpObj) h += '<section class="card"><div class="head"><h2>' + ic(tpObj.icon) + ' ' + esc(tpObj.title) + '</h2><span class="chip baby">مهم الآن</span></div><p class="small">' + esc(tpObj.intro || '') + '</p><button class="btn sm" data-action="topic" data-id="' + tpObj.id + '">اقرئي النصائح</button></section>';
+    if (profileIncomplete(c)) h += '<section class="card mom"><h2>أكملي ملفك</h2><p class="small">أضيفي نوع الولادة وعمرك وحالتك الصحية لتظهر لك نصائح مخصصة.</p><button class="btn momb sm" data-action="complete">إكمال الآن</button></section>';
+
+    var hc = S.settings.homeCards || {};
+    function on(k) { return hc[k] !== false; }
+
+    /* 24h */
+    if (on('day')) {
+      var sr = sleepRange(a.devMonths);
+      var activeGoal = a.devMonths < 12 ? 30 : 180;
+      h += '<details class="card fold"' + (sub.homeDay ? ' open' : '') + ' data-fold="homeDay"><summary class="head"><h2>آخر 24 ساعة</h2><span class="row small muted"><span>' + sm.feeds + ' رضعات</span><span>·</span><span>' + sm.wet + ' مبلل</span><span>·</span><span>' + num(sm.sleepMin / 60, 1) + ' س نوم</span></span></summary>' +
+        '<div class="grid3">' +
+        '<div class="stat"><b>' + sm.feeds + '</b><span>رضعات</span></div>' +
+        '<div class="stat"><b>' + sm.wet + '<small> / ' + sm.dirty + '</small></b><span>مبلل / براز</span></div>' +
+        '<div class="stat"><b>' + num(sm.sleepMin / 60, 1) + '</b><span>ساعات نوم</span></div></div>' +
+        '<div class="field"><div class="head small"><span>نوم (الموصى به ' + sr[0] + '–' + sr[1] + ' ساعة)</span><span class="num">' + num(sm.sleepMin / 60, 1) + '</span></div>' + meter(sm.sleepMin / 60, sr[0]) + '</div>' +
+        '<div class="field"><div class="head small"><span>' + (a.devMonths < 12 ? 'وقت البطن اليوم (الهدف 30 د)' : 'لعب نشط اليوم (الهدف 180 د)') + '</span><span class="num">' + sm.tummy + ' د</span></div>' + meter(sm.tummy, activeGoal) + '</div>' +
+        '<div class="field"><div class="head small"><span>نشاطك هذا الأسبوع (الهدف 150 د)</span><span class="num">' + sm.momMin + ' د</span></div>' + meter(sm.momMin, 150, 'mom') + '</div>' +
+        '<button class="btn sm" data-action="go" data-view="log" data-sub="week">الرسوم البيانية للأسبوع</button></details>';
+    }
+
     var nv = E.nextVaccine(c, W.VACCINES, S.vaccines[c.id], today());
-    if (nv) {
-      h += '<section class="card ' + (nv.overdue ? 'warn' : '') + '"><div class="head"><h2>' + ic('calendar') + ' التطعيم القادم</h2>' + (nv.overdue ? '<span class="chip danger">متأخر</span>' : '<span class="chip">' + esc(fmtDate(nv.due)) + '</span>') + '</div>' +
-        '<p><b>' + esc(nv.v.label) + '</b></p><p class="small muted">' + esc(nv.v.list.join('، ')) + '</p>' +
-        '<button class="btn sm" data-action="go" data-view="care" data-sub="vax">الجدول الكامل</button></section>';
+    if (nv && on('vax')) {
+      h += '<section class="card ' + (nv.overdue ? 'warn' : '') + '"><div class="head"><h2>' + ic('calendar') + ' التطعيم القادم: ' + esc(nv.v.label) + '</h2>' + (nv.overdue ? '<span class="chip danger">متأخر</span>' : '') + '</div>' +
+        '<p class="small">' + esc(fmtDateH(nv.due)) + '</p>' +
+        '<button class="btn sm" data-action="go" data-view="care" data-sub="vax">الجدول والتفاصيل</button></section>';
     }
 
     /* play idea of the day */
-    var pb = E.stageFor(a.devMonths, W.PLAY);
-    var idx = Math.floor(Date.now() / 86400000) % pb.items.length;
-    var idea = pb.items[idx];
-    var doneToday = ((S.play[c.id] || {})[today()] || []).indexOf(idx) >= 0;
-    h += '<section class="card"><div class="head"><h2>' + ic('play') + ' فكرة لعب اليوم</h2><span class="chip baby">' + esc(W.MILESTONE_AREAS[idea.a]) + '</span></div><p>' + esc(idea.t) + '</p>' +
-      '<div class="row"><button class="btn sm' + (doneToday ? ' primary' : '') + '" data-action="playdone" data-i="' + idx + '">' + ic('check') + (doneToday ? 'تم اليوم' : 'جرّبناها') + '</button><button class="btn sm ghost" data-action="go" data-view="growth" data-sub="play">أفكار أخرى</button></div>' + srcHtml(pb.src) + '</section>';
+    if (on('play')) {
+      var pb = E.stageFor(a.devMonths, W.PLAY);
+      var idx = Math.floor(Date.now() / 86400000) % pb.items.length;
+      var idea = pb.items[idx];
+      var doneToday = ((S.play[c.id] || {})[today()] || []).indexOf(idx) >= 0;
+      h += '<section class="card"><div class="head"><h2>' + ic('play') + ' فكرة لعب اليوم</h2><span class="chip baby">' + esc(W.MILESTONE_AREAS[idea.a]) + '</span></div><p>' + esc(idea.t) + '</p>' +
+        '<div class="row"><button class="btn sm' + (doneToday ? ' primary' : '') + '" data-action="playdone" data-i="' + idx + '">' + ic('check') + (doneToday ? 'تم اليوم' : 'جرّبناها') + '</button><button class="btn sm ghost" data-action="go" data-view="growth" data-sub="play">أفكار أخرى</button></div>' + srcHtml(pb.src) + '</section>';
+    }
 
     /* mother check-in */
     var lastCheck = S.checkins.length ? S.checkins[S.checkins.length - 1].date : null;
-    if (a.days < 365 && (!lastCheck || E.daysBetween(lastCheck, today()) >= 28) && a.days >= 10) {
+    if (on('mom') && a.days < 365 && (!lastCheck || E.daysBetween(lastCheck, today()) >= 28) && a.days >= 10) {
       h += '<section class="card mom"><h2>' + ic('heart') + ' كيف حالك أنتِ؟</h2><p class="small">سؤالان قصيران من إرشادات NICE للاطمئنان على صحتك النفسية بعد الولادة.</p><button class="btn momb" data-action="checkin">ابدئي الاطمئنان</button></section>';
     }
 
     /* tracks */
-    var tracks = E.buildTracks(S.mother, c, today());
-    h += '<section class="card"><h2>مساراتك المخصصة</h2><p class="small muted">مبنية على ملفك وملف طفلك.</p>';
-    tracks.forEach(function (t, i) {
-      h += '<details class="track"' + (i === 0 ? ' open' : '') + '><summary><span class="chip ' + (t.who === 'mother' ? 'mom' : 'baby') + '">' +
-        (t.who === 'mother' ? 'للأم' : 'للطفل') + '</span>' + esc(t.title) + '</summary><div class="body">' +
-        '<p class="small muted">' + esc(t.reason) + '</p>' + tipsHtml(t.tips) + '</div></details>';
-    });
-    h += '</section>';
+    if (on('tracks')) {
+      var tracks = E.buildTracks(S.mother, c, today());
+      h += '<section class="card"><h2>مساراتك المخصصة (' + tracks.length + ')</h2><p class="small muted">اضغطي على أي مسار لعرض نصائحه.</p>';
+      tracks.forEach(function (t) {
+        h += '<details class="track"><summary><span class="chip ' + (t.who === 'mother' ? 'mom' : 'baby') + '">' +
+          (t.who === 'mother' ? 'للأم' : 'للطفل') + '</span>' + esc(t.title) + '</summary><div class="body">' +
+          '<p class="small muted">' + esc(t.reason) + '</p>' + tipsHtml(t.tips) + '</div></details>';
+      });
+      h += '</section>';
+    }
 
     if (S.logs.length > 20 && (!S.settings.lastBackup || E.daysBetween(S.settings.lastBackup, today()) > 14)) {
       h += '<section class="card warn"><h2>احفظي نسخة احتياطية</h2><p class="small">بياناتك محفوظة على هذا الجهاز فقط. احفظي نسخة كل أسبوعين حتى لا تضيع إذا مُسح المتصفح.</p><button class="btn sm" data-action="export">' + ic('download') + 'حفظ نسخة الآن</button></section>';
     }
+    h += '<button class="btn ghost block small" data-action="go" data-view="settings" data-sub="display">تخصيص بطاقات الصفحة الرئيسية</button>';
     return h + disclaimer();
   }
 
@@ -547,7 +688,18 @@
   function vGrowth() {
     var c = child();
     var tab = sub.growth || 'measure';
-    var h = seg('growth', [['measure', 'القياسات'], ['dev', 'مراحل النمو'], ['play', 'أفكار لعب'], ['teeth', 'الأسنان']], tab);
+    var h = seg('growth', [['measure', 'القياسات'], ['dev', 'مراحل النمو'], ['firsts', 'اللحظات الأولى'], ['play', 'أفكار لعب'], ['teeth', 'الأسنان']], tab);
+    if (tab === 'firsts') {
+      var fs = (S.firsts || []).filter(function (f) { return f.childId === c.id; }).sort(function (p, q) { return p.date < q.date ? 1 : -1; });
+      h += '<section class="card"><div class="head"><h2>' + ic('heart') + ' لحظات ' + esc(c.name) + ' الأولى</h2><button class="btn primary sm" data-action="addfirst">' + ic('plus') + 'إضافة</button></div>';
+      if (!fs.length) h += '<div class="empty">' + ic('heart') + '<p>سجّلي أول ابتسامة، أول سن، أول خطوة… مع صورة إن أحببتِ. الصور تبقى على جهازك فقط.</p></div>';
+      else h += '<div class="photos">' + fs.map(function (f) {
+        return '<div class="first">' + (f.photo ? '<img data-photo="' + f.id + '" alt="' + esc(f.title) + '" hidden><div class="ph">' + ic('heart') + '</div>' : '<div class="ph">' + ic('heart') + '</div>') +
+          '<div class="cap"><b>' + esc(f.title) + '</b><span class="muted">' + esc(fmtDateH(f.date)) + '</span><span class="muted">عمر ' + esc(E.formatAge(E.daysBetween(c.dob, f.date))) + '</span>' + (f.note ? '<span>' + esc(f.note) + '</span>' : '') +
+          '<button class="btn sm ghost" data-action="delfirst" data-id="' + f.id + '">' + ic('trash') + 'حذف</button></div></div>';
+      }).join('') + '</div>';
+      return h + '</section>';
+    }
     if (tab === 'measure') {
       var ind = sub.ind || 'wfa';
       h += '<section class="card"><div class="head"><h2>منحنى النمو</h2><button class="btn primary sm" data-action="addgrowth">' + ic('plus') + 'قياس جديد</button></div>' +
@@ -633,7 +785,18 @@
   function vGuide() {
     var c = child(); var a = E.ageInfo(c, today());
     var who = sub.guide || 'baby';
-    var h = seg('guide', [['baby', 'الطفل'], ['mother', 'الأم'], ['food', 'الطعام والحساسية'], ['safety', 'السلامة']], who);
+    var h = '<div class="searchbox">' + ic('book') + '<label for="gsearch" class="sr">ابحثي في الدليل</label><input id="gsearch" type="search" data-action="search" placeholder="ابحثي في الدليل: حرارة، نوم، أسنان…" value="' + esc(sub.q || '') + '" autocomplete="off"></div>' +
+      '<section class="card" id="searchResults"' + (sub.q && sub.q.trim().length > 1 ? '' : ' hidden') + '>' + searchHtml(sub.q || '') + '</section>';
+    h += seg('guide', [['baby', 'الطفل'], ['mother', 'الأم'], ['topics', 'مواضيع'], ['food', 'الطعام والحساسية'], ['safety', 'السلامة']], who);
+    if (who === 'topics') {
+      var am = a.devMonths;
+      (W.TOPICS || []).forEach(function (tp) {
+        var rel = am >= tp.from && am < tp.to;
+        h += '<details class="card" id="t-' + tp.id + '"' + (sub.topic === tp.id ? ' open' : '') + '><summary class="head" style="cursor:pointer;list-style:none"><h2>' + ic(tp.icon || 'book') + ' ' + esc(tp.title) + '</h2>' + (rel ? '<span class="chip baby">يناسب عمر طفلك</span>' : '') + '</summary>' +
+          (tp.intro ? '<p class="small muted">' + esc(tp.intro) + '</p>' : '') + tipsHtml(tp.tips) + '</details>';
+      });
+      return h + disclaimer();
+    }
     if (who === 'baby') {
       var stageId = sub.stage || E.stageFor(a.devMonths, W.STAGES).id;
       var st = W.STAGES.filter(function (s) { return s.id === stageId; })[0];
@@ -686,9 +849,12 @@
         var due = E.vaccineDue(c.dob, v.m);
         var st = done[v.m] ? ['ok', done[v.m] === c.dob && v.m > 0 ? 'تم' : 'تم ' + fmtDate(done[v.m])] : a.months > v.m + 1 ? ['danger', 'متأخر'] : a.months >= v.m - 0.25 ? ['warn', 'مستحق الآن'] : ['', 'قادم'];
         h += '<li><input type="checkbox" style="width:26px;height:26px;min-height:0;flex:none;accent-color:var(--ok)" aria-label="تم تطعيم ' + esc(v.label) + '" data-action="vax" data-m="' + v.m + '"' + (done[v.m] ? ' checked' : '') + '>' +
-          '<div class="grow"><div class="row"><b>' + esc(v.label) + '</b><span class="chip ' + st[0] + '">' + esc(st[1]) + '</span></div><div class="small muted">الموعد: ' + esc(fmtDate(due)) + '</div><div class="small">' + esc(v.list.join('، ')) + '</div></div></li>';
+          '<div class="grow"><div class="row"><b>' + esc(v.label) + '</b><span class="chip ' + st[0] + '">' + esc(st[1]) + '</span></div><div class="small muted">الموعد: ' + esc(fmtDateH(due)) + '</div><div class="small">' + esc(v.list.join('، ')) + '</div></div></li>';
       });
-      h += '</ul></section><section class="card warn"><h2>ملاحظات مهمة</h2>' + tipsHtml(W.VACCINE_NOTES) + '</section>';
+      h += '</ul></section>';
+      if (a.months < 12 && c.feeding !== 'formula') h += '<section class="card tint"><h2>' + ic('sun') + ' تذكير يومي بفيتامين د</h2><p class="small">يضيف تنبيهًا يوميًا في تقويم جوالك حتى عيد ميلاد ' + esc(c.name) + ' الأول.</p><div class="row">' +
+        '<label for="vitdTime" class="sr">وقت التذكير</label><input type="time" id="vitdTime" data-action="vitdtime" value="' + esc(S.settings.vitdTime || '09:00') + '" style="flex:1"><button class="btn primary" data-action="icsvitd">' + ic('calendar') + 'أضيفي للتقويم</button></div>' + srcHtml(['aap_vit_iron']) + '</section>';
+      h += '<section class="card warn"><h2>ملاحظات مهمة</h2>' + tipsHtml(W.VACCINE_NOTES) + '</section>';
     } else if (tab === 'fever') {
       var ageM = E.ageInfo(c, today()).months;
       var temps = childLogs(c, 'temp').sort(function (p, q) { return q.ts - p.ts; }).slice(0, 5);
@@ -733,7 +899,7 @@
     var temps = childLogs(c, 'temp').filter(function (l) { return l.ts >= days7; });
     function gcell(ind, v, u) { if (!v) return '—'; var r = E.growthAssess(ind, c.sex, devMonthsAt(c, g.date), +v, W.WHO_LMS); return esc(v) + ' ' + u + ' (مئين ' + num(r.percentile, 0) + ')'; }
     return '<div class="head noprint"><h2>ملخص لزيارة الطبيب</h2><button type="button" class="x" data-action="close" aria-label="إغلاق">' + ic('x') + '</button></div>' +
-      '<div class="card"><h2>' + esc(c.name) + ' — ' + (c.sex === 'f' ? 'أنثى' : 'ذكر') + '</h2><p>تاريخ الولادة: ' + esc(fmtDate(c.dob)) + ' · العمر: ' + esc(E.formatAge(a.days)) + (a.useCorrected ? ' (المصحح: ' + esc(E.formatAge(Math.max(0, a.correctedDays))) + ')' : '') + '</p>' +
+      '<div class="card"><h2>' + esc(c.name) + ' — ' + (c.sex === 'f' ? 'أنثى' : 'ذكر') + '</h2><p>تاريخ الولادة: ' + esc(fmtDateH(c.dob)) + ' · العمر: ' + esc(E.formatAge(a.days)) + (a.useCorrected ? ' (المصحح: ' + esc(E.formatAge(Math.max(0, a.correctedDays))) + ')' : '') + '</p>' +
       '<p class="small">أسبوع الولادة: ' + esc(c.gaWeeks) + ' · وزن الولادة: ' + (c.birthWeight ? esc(c.birthWeight) + ' غ' : '—') + ' · الولادة: ' + esc((DELIVERY.filter(function (d) { return d[0] === c.delivery; })[0] || ['', '—'])[1]) + ' · الرضاعة: ' + esc((FEEDING.filter(function (d) { return d[0] === c.feeding; })[0] || ['', '—'])[1]) + '</p></div>' +
       '<div class="card"><h2>آخر قياس' + (g ? ' (' + esc(fmtDate(g.date)) + ')' : '') + '</h2>' + (g && beforeTerm(c, g.date) ? '<p>آخر قياس قبل موعد الولادة المتوقع؛ يقيّمه الطبيب بمنحنيات الخدج.</p>' : g ? '<p>الوزن: ' + gcell('wfa', g.w, 'كغ') + '<br>الطول: ' + gcell('lhfa', g.l, 'سم') + '<br>محيط الرأس: ' + gcell('hcfa', g.hc, 'سم') + '</p>' : '<p class="muted">لا يوجد.</p>') + '</div>' +
       '<div class="card"><h2>متوسط آخر 7 أيام</h2><p>رضعات: ' + num(feeds, 1) + ' يوميًا · نوم: ' + num(sleep, 1) + ' ساعة · حفاضات مبللة: ' + num(wet, 1) + '</p>' + (temps.length ? '<p>قياسات حرارة: ' + temps.map(function (t) { return esc(t.c) + '°'; }).join('، ') + '</p>' : '') + '</div>' +
@@ -763,7 +929,12 @@
       h += '<section class="card"><h2>المظهر</h2>' + choice('theme', [['', 'تلقائي'], ['light', 'فاتح'], ['dark', 'داكن'], ['night', 'ليلي دافئ']], st.theme || '') +
         '<label class="check"><input type="checkbox" data-action="autonight"' + (st.autoNight ? ' checked' : '') + '>الوضع الليلي الدافئ تلقائيًا من 10 مساءً إلى 6 صباحًا</label>' +
         '<p class="hint">الوضع الليلي إضاءة خافتة دافئة تريح العين وقت الرضعات الليلية.</p></section>' +
-        '<section class="card"><h2>حجم الخط</h2>' + choice('size', [['', 'عادي'], ['l', 'كبير'], ['xl', 'كبير جدًا']], st.size || '') + '</section>';
+        '<section class="card"><h2>حجم الخط</h2>' + choice('size', [['', 'عادي'], ['l', 'كبير'], ['xl', 'كبير جدًا']], st.size || '') + '</section>' +
+        '<section class="card"><h2>التاريخ</h2><label class="check"><input type="checkbox" data-action="hijri"' + (st.hijri !== false ? ' checked' : '') + '>إظهار التاريخ الهجري بجانب الميلادي</label></section>' +
+        '<section class="card"><h2>بطاقات الصفحة الرئيسية</h2><p class="small muted">اختاري ما يظهر تحت أزرار التسجيل السريع.</p>' +
+        [['day', 'ملخص آخر 24 ساعة'], ['vax', 'التطعيم القادم'], ['play', 'فكرة لعب اليوم'], ['mom', 'الاطمئنان على صحتك النفسية'], ['tracks', 'المسارات المخصصة']].map(function (o) {
+          return '<label class="check"><input type="checkbox" data-action="homecard" data-k="' + o[0] + '"' + ((st.homeCards || {})[o[0]] !== false ? ' checked' : '') + '>' + o[1] + '</label>';
+        }).join('') + '</section>';
     } else if (tab === 'data') {
       h += '<section class="card"><h2>خصوصيتك</h2><p>كل بياناتك محفوظة على هذا الجهاز فقط ولا تُرسل إلى أي خادم. إذا مُسحت بيانات المتصفح ستُحذف، لذا احفظي نسخة احتياطية بانتظام.</p>' +
         (S.settings.lastBackup ? '<p class="small muted">آخر نسخة: ' + esc(fmtDate(S.settings.lastBackup)) + '</p>' : '') +
@@ -792,10 +963,16 @@
     if (meta) meta.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#ffffff');
   }
   var formDirty = false;
-  document.addEventListener('input', function (e) { if (e.target.closest('#app form')) formDirty = true; });
+  document.addEventListener('input', function (e) {
+    if (e.target.getAttribute('data-action') === 'search') {
+      sub.q = e.target.value; var box = document.getElementById('searchResults');
+      box.innerHTML = searchHtml(sub.q); box.hidden = sub.q.trim().length < 2; return;
+    }
+    if (e.target.closest('#app form')) formDirty = true;
+  });
   function canAutoRender() {
     var a = document.activeElement;
-    return !formDirty && !document.getElementById('modal').innerHTML && !(a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName));
+    return !formDirty && !(sub.q && view === 'guide') && !document.getElementById('modal').innerHTML && !(a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName));
   }
   function render(keepScroll) {
     var app = document.getElementById('app');
@@ -803,8 +980,9 @@
     var y = window.scrollY;
     var openState = keepScroll ? [].map.call(app.querySelectorAll('details'), function (d) { return d.open; }) : null;
     formDirty = false;
-    if (!S.children.length) {
-      app.innerHTML = vOnboard();
+    if (!S.children.length || S.settings.needsProfile) {
+      if (S.children.length && !child()) S.activeId = S.children[0].id;
+      app.innerHTML = S.children.length ? vOnboard2() : vOnboard();
       tabs.hidden = true;
       return;
     }
@@ -819,6 +997,7 @@
       b.classList.toggle('on', on);
       if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
+    loadPhotos();
     if (openState) {
       var ds = app.querySelectorAll('details');
       if (ds.length === openState.length) [].forEach.call(ds, function (d, i) { d.open = openState[i]; });
@@ -868,6 +1047,7 @@
 
   /* ---------- events ---------- */
   var pendingConfirm = null;
+  var pendingImport = null;
   function confirmSheet(msg, okLabel, fn) {
     pendingConfirm = fn;
     openModal('<h2>' + esc(msg) + '</h2><div class="grid2"><button class="btn" data-action="close">إلغاء</button><button class="btn dangerb" data-action="confirmok">' + esc(okLabel) + '</button></div>');
@@ -946,6 +1126,15 @@
         download('baby-plan-backup-' + today() + '.json', JSON.stringify(S, null, 2), 'application/json');
         S.settings.lastBackup = today(); save(); toast('تم حفظ النسخة الاحتياطية'); render(true);
         break;
+      case 'icsvitd': {
+        var until = E.addDays(c.dob, 365).replace(/-/g, '');
+        var tm = (S.settings.vitdTime || '09:00').replace(':', '') + '00';
+        var ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BabyPlan//AR', 'BEGIN:VEVENT', 'UID:vitd-' + c.id + '@babyplan',
+          'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z', 'DTSTART:' + today().replace(/-/g, '') + 'T' + tm,
+          'DURATION:PT5M', 'RRULE:FREQ=DAILY;UNTIL=' + until + 'T235959', 'SUMMARY:فيتامين د لـ ' + c.name,
+          'DESCRIPTION:400 وحدة دولية يوميًا حتى عمر سنة (AAP)', 'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', 'DESCRIPTION:فيتامين د', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+        download('vitamin-d-' + c.name + '.ics', ics, 'text/calendar'); toast('افتحي الملف لإضافة التذكير اليومي إلى تقويمك'); break;
+      }
       case 'ics': download('vaccines-' + c.name + '.ics', icsFor(c), 'text/calendar'); toast('افتحي الملف لإضافة المواعيد إلى تقويمك'); break;
       case 'wipe': confirmSheet('حذف كل البيانات من هذا الجهاز؟', 'حذف الكل', function () { S = W.Store.empty(); save(); view = 'home'; render(); }); break;
       case 'playdone': {
@@ -972,6 +1161,29 @@
       case 'notedone': break;
       case 'delnote': { var nid = el.getAttribute('data-id'); S.notes = S.notes.filter(function (n) { return n.id !== nid; }); save(); render(true); break; }
       case 'report': openModal(reportHtml()); break;
+      case 'importmerge': {
+        if (!pendingImport) break;
+        var res = W.Store.merge(S, pendingImport); S = res.state; pendingImport = null; save(); closeModal(); applyDisplay(); render();
+        toast('تم الدمج: ' + res.added.logs + ' سجل، ' + res.added.growth + ' قياس، ' + res.added.children + ' طفل جديد');
+        break;
+      }
+      case 'importreplace': {
+        var d = pendingImport; pendingImport = null; closeModal();
+        if (d) confirmSheet('سيتم حذف بياناتك الحالية واستبدالها. متأكدة؟', 'استبدال', function () { S = W.Store.migrate(d); save(); view = 'home'; applyDisplay(); render(); toast('تمت استعادة النسخة'); });
+        break;
+      }
+      case 'addfirst': openModal(firstForm('')); break;
+      case 'firstfrom': closeModal(); openModal(firstForm(el.getAttribute('data-t') || '')); break;
+      case 'delfirst': {
+        var fid = el.getAttribute('data-id');
+        confirmSheet('حذف هذه اللحظة وصورتها؟', 'حذف', function () { S.firsts = S.firsts.filter(function (f) { return f.id !== fid; }); Photos.del(fid).catch(function () {}); save(); render(true); });
+        break;
+      }
+      case 'topic': view = 'guide'; sub.guide = 'topics'; sub.topic = el.getAttribute('data-id'); render(); var te = document.getElementById('t-' + sub.topic); if (te) te.scrollIntoView(); break;
+      case 'skip2': S.settings.needsProfile = false; save(); view = 'home'; render(); break;
+      case 'complete': view = 'settings'; sub.settings = 'profile'; render(); window.scrollTo(0, 0); break;
+      case 'homecard': { var k2 = el.getAttribute('data-k'); S.settings.homeCards = S.settings.homeCards || {}; S.settings.homeCards[k2] = S.settings.homeCards[k2] === false; save(); render(true); break; }
+      case 'hijri': S.settings.hijri = S.settings.hijri === false; save(); render(true); break;
       case 'print': window.print(); break;
     }
   });
@@ -981,11 +1193,14 @@
     var c = child();
     if (el.name === 'theme' && view === 'settings') { S.settings.theme = el.value; save(); applyDisplay(); return; }
     if (el.name === 'size' && view === 'settings') { S.settings.size = el.value; save(); applyDisplay(); return; }
+    if (act === 'vitdtime') { S.settings.vitdTime = el.value; save(); return; }
     if (act === 'autonight') { S.settings.autoNight = el.checked; save(); applyDisplay(); return; }
     if (act === 'ms') {
       S.milestones[c.id] = S.milestones[c.id] || {};
       if (el.checked) S.milestones[c.id][el.getAttribute('data-k')] = today(); else delete S.milestones[c.id][el.getAttribute('data-k')];
+      var msTxt = el.closest('label') ? el.closest('label').textContent.trim() : '';
       save(); render(true);
+      if (el.checked) celebrate(c.name + ' حقق مهارة جديدة!', msTxt);
     } else if (act === 'vax') {
       S.vaccines[c.id] = S.vaccines[c.id] || {};
       if (el.checked) S.vaccines[c.id][el.getAttribute('data-m')] = today(); else delete S.vaccines[c.id][el.getAttribute('data-m')];
@@ -1000,7 +1215,10 @@
         try {
           var data = JSON.parse(r.result);
           if (!data || !Array.isArray(data.children) || !Array.isArray(data.logs)) throw new Error('bad');
-          confirmSheet('استبدال بياناتك الحالية بهذه النسخة؟', 'استبدال', function () { S = W.Store.migrate(data); save(); view = 'home'; applyDisplay(); render(); toast('تمت استعادة النسخة'); });
+          pendingImport = data;
+          if (!S.children.length) { S = W.Store.migrate(data); S.settings.needsProfile = false; save(); view = 'home'; applyDisplay(); render(); toast('تمت استعادة النسخة'); return; }
+          openModal('<h2>ماذا تريدين أن تفعلي بهذه النسخة؟</h2><p class="small">الدمج يضيف السجلات الجديدة من الجهاز الآخر (مثل جوال زوجك) دون حذف أي شيء. الاستبدال يمسح بياناتك الحالية.</p>' +
+            '<button class="btn primary block" data-action="importmerge">دمج مع بياناتي (موصى به)</button><button class="btn block" data-action="importreplace">استبدال بياناتي</button><button class="btn ghost block" data-action="close">إلغاء</button>');
         } catch (err) { toast('الملف غير صالح. اختاري ملف نسخة احتياطية من هذا التطبيق.'); }
       };
       r.readAsText(el.files[0]);
@@ -1014,8 +1232,15 @@
     var c = child();
     if ((kind === 'onboard' || kind === 'newchild' || kind === 'child') && !radio(f, 'c_sex')) { toast('اختاري جنس الطفل'); return; }
     if (kind === 'onboard') {
-      S.mother = readMother(f);
-      var nc = readChild(f); S.children.push(nc); S.activeId = nc.id; if (f.c_vaxdone && f.c_vaxdone.checked) markPastVaccines(nc); save(); W.Store.persist(); view = 'home'; render();
+      var nc = { id: W.Store.uid(), name: f.c_name.value.trim(), sex: radio(f, 'c_sex'), dob: f.c_dob.value, gaWeeks: 40, birthWeight: null, delivery: '', feeding: radio(f, 'c_feed') || 'breast', multiple: false, conditions: [] };
+      S.children.push(nc); S.activeId = nc.id; S.settings.needsProfile = true; save(); W.Store.persist(); view = 'home'; render(); window.scrollTo(0, 0);
+    } else if (kind === 'onboard2') {
+      var c2 = child();
+      c2.gaWeeks = +f.c_ga.value || 40; c2.birthWeight = f.c_bw.value ? +f.c_bw.value : null; c2.delivery = f.c_del.value; c2.multiple = f.c_multi.checked;
+      c2.conditions = [].slice.call(f.querySelectorAll('input[name=c_cond]:checked')).map(function (i) { return i.value; });
+      if (f.m_age.value) S.mother = readMother(f);
+      if (f.c_vaxdone.checked) markPastVaccines(c2);
+      S.settings.needsProfile = false; save(); view = 'home'; render(); window.scrollTo(0, 0);
     } else if (kind === 'mother') {
       S.mother = readMother(f); save(); toast('تم الحفظ'); render(true);
     } else if (kind === 'child') {
@@ -1058,6 +1283,16 @@
       var g = { id: W.Store.uid(), childId: c.id, date: f.g_date.value, w: f.g_w.value ? +f.g_w.value : null, l: f.g_l.value ? +f.g_l.value : null, hc: f.g_hc.value ? +f.g_hc.value : null };
       if (!g.w && !g.l && !g.hc) { toast('أدخلي قياسًا واحدًا على الأقل'); return; }
       S.growth.push(g); save(); closeModal(); toast('تم حفظ القياس'); render(true);
+    } else if (kind === 'first') {
+      var fe = { id: W.Store.uid(), childId: c.id, title: f.f_title.value.trim(), date: f.f_date.value, note: f.f_note.value.trim(), photo: false };
+      var file = f.f_photo.files && f.f_photo.files[0];
+      S.firsts.push(fe); save(); closeModal();
+      if (file) {
+        resizeImage(file, 1280).then(function (b) { return Photos.put(fe.id, b); }).then(function () { fe.photo = true; save(); render(true); loadPhotos(); })
+          .catch(function () { toast('تعذّر حفظ الصورة على هذا الجهاز'); });
+      }
+      view = 'growth'; sub.growth = 'firsts'; toast('تم حفظ اللحظة'); render(true);
+      if (fe.title.indexOf('سن') >= 0 && !(S.teeth[c.id] || {}).first) { S.teeth[c.id] = { first: fe.date }; save(); }
     } else if (kind === 'tooth') {
       S.teeth[c.id] = { first: f.t_first.value || null }; save(); toast('تم الحفظ'); render(true);
     } else if (kind === 'note') {
