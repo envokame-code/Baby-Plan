@@ -173,4 +173,9 @@ test('service worker caches every file the page loads', function () {
   assert.ok(/var CACHE = 'babyplan-v\d+'/.test(sw));
 });
 
+test('js/bundle.js is up to date with the sources (run node tools/build.js)', function () {
+  var b = require(path.join(__dirname, '..', 'tools/build.js')).bundle();
+  assert.strictEqual(fs.readFileSync(path.join(__dirname, '..', 'js/bundle.js'), 'utf8'), b, 'bundle is stale: run node tools/build.js');
+});
+
 console.log('\n' + passed + ' tests passed');

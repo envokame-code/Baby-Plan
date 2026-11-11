@@ -61,7 +61,8 @@
 :root[data-size="xl"] { --fs: 21px; }
 
 * { box-sizing: border-box; }
-html { font-size: var(--fs); -webkit-text-size-adjust: 100%; }
+/* WCAG 2.4.11: لا يُخفي الشريطان العلوي والسفلي العنصر المحدد عند التنقل بلوحة المفاتيح */
+html { font-size: var(--fs); -webkit-text-size-adjust: 100%; scroll-padding-top: calc(72px + env(safe-area-inset-top, 0px)); scroll-padding-bottom: calc(var(--nav-h) + 16px + env(safe-area-inset-bottom, 0px)); }
 body {
   margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font);
   font-size: 1rem; line-height: 1.75;

@@ -26,8 +26,8 @@
     med: { ico: 'pill', name: 'دواء' },
     mom_bp: { ico: 'heart', name: 'ضغط الأم', mom: true }
   };
-  var APP_VERSION = '2026.11.6';
-  var WHATS_NEW = ['4 أقسام بدل 5: السجل صار داخل الصفحة الرئيسية', 'الصفحة الرئيسية أقصر: أزرار التسجيل، سجل اليوم، وأهم تنبيهين فقط', 'زر "تسجيل آخر" يفتح كل أنواع التسجيل دون مغادرة الصفحة', 'مساراتك المخصصة صارت أول تبويب في الدليل', 'الحمى والطوارئ في صفحة واحدة، والسلامة ضمن المواضيع'];
+  var APP_VERSION = '2026.11.7';
+  var WHATS_NEW = ['فتح أسرع لأول مرة: ملف برمجي واحد بدل عشرة', 'الإعدادات صارت 3 تبويبات: الملف والأطفال، العرض، البيانات والمصادر', 'صفحة السجل: زر واحد للتسجيل بدل شبكة الأزرار المكررة', 'تحسينات وصول: العنصر المحدد لا يختفي خلف الشريطين العلوي والسفلي'];
   function hasHtn() { return (S.mother.conditions || []).indexOf('htn') >= 0; }
   function isDad() { return S.settings.caregiver === 'dad'; }
 
@@ -546,8 +546,7 @@
     var c = child();
     var tab = sub.log || 'list';
     var h = timerBanner(c);
-    h += '<section class="card"><h2>تسجيل جديد لـ ' + esc(c.name) + '</h2><div class="quick">' +
-      Object.keys(T).filter(function (k) { return k !== 'mom_bp' || hasHtn(); }).filter(function (k) { return !T[k].mom || S.settings.caregiver !== 'dad' ; }).map(function (k) { return quickBtn(k); }).join('') + '</div></section>';
+    h += '<button class="btn primary block" data-action="moretypes">' + ic('plus') + 'تسجيل جديد لـ ' + esc(c.name) + '</button>';
     h += seg('log', [['list', 'السجلات'], ['week', 'الأسبوع']], tab);
     if (tab === 'week') {
       var a = E.ageInfo(c, today());
@@ -901,17 +900,20 @@
   function vSettings() {
     var c = child();
     var tab = sub.settings || 'profile';
-    var h = seg('settings', [['profile', 'الملف'], ['children', 'الأطفال'], ['display', 'العرض'], ['data', 'البيانات'], ['sources', 'المصادر']], tab);
+    if (tab === 'children') tab = 'profile';
+    if (tab === 'sources') tab = 'data';
+    var h = seg('settings', [['profile', 'الملف والأطفال'], ['display', 'العرض'], ['data', 'البيانات والمصادر']], tab);
     if (tab === 'profile') {
       h += '<form class="card" data-form="mother">' + motherFields(S.mother) + '<button class="btn primary block" type="submit">حفظ معلوماتي</button></form>';
       h += '<form class="card" data-form="child" data-id="' + c.id + '">' + childFields(c) + '<button class="btn primary block" type="submit">حفظ معلومات ' + esc(c.name) + '</button></form>';
-    } else if (tab === 'children') {
+    }
+    if (tab === 'profile') {
       h += '<section class="card"><h2>أطفالك</h2><ul class="list">' + S.children.map(function (k) {
         return '<li><span class="ico">' + ic('child') + '</span><div class="grow"><b>' + esc(k.name) + '</b><div class="small muted">' + esc(E.formatAge(E.ageInfo(k, today()).days)) + '</div></div>' +
           (k.id === S.activeId ? '<span class="chip baby">الحالي</span>' : '<button class="btn sm" data-action="switch" data-id="' + k.id + '">اختيار</button>') +
           (S.children.length > 1 ? '<button class="x" aria-label="حذف ' + esc(k.name) + '" data-action="delchild" data-id="' + k.id + '">' + ic('trash') + '</button>' : '') + '</li>';
       }).join('') + '</ul></section>';
-      h += '<form class="card" data-form="newchild"><h2>إضافة طفل</h2>' + childFields(null, true) + '<button class="btn primary block" type="submit">إضافة</button></form>';
+      h += '<details class="card fold"><summary class="head"><h2>' + ic('plus') + ' إضافة طفل</h2></summary><form class="form" data-form="newchild">' + childFields(null, true) + '<button class="btn primary block" type="submit">إضافة</button></form></details>';
     } else if (tab === 'display') {
       var st = S.settings;
       h += '<section class="card"><h2>المظهر</h2>' + choice('theme', [['', 'تلقائي'], ['light', 'فاتح'], ['dark', 'داكن'], ['night', 'ليلي دافئ']], st.theme || '') +
@@ -927,12 +929,13 @@
         '<p class="hint">لمشاركة السجل مع زوجك أو جهاز آخر: احفظي نسخة وأرسليها له، ثم يستعيدها من هنا.</p></section>' +
         ((S.firsts || []).some(function (f) { return f.photo; }) ? '<section class="card"><h2>صور اللحظات الأولى المحفوظة</h2><p class="small">أزلنا دفتر اللحظات الأولى لتبسيط التطبيق. صورك ما زالت على هذا الجهاز؛ نزّليها لتحفظيها في جوالك.</p><button class="btn" data-action="savephotos">' + ic('download') + 'تنزيل الصور</button></section>' : '') +
         '<section class="card danger"><h2>حذف كل البيانات</h2><p class="small">لا يمكن التراجع عن هذا.</p><button class="btn dangerb" data-action="wipe">حذف كل البيانات</button></section>';
-    } else {
-      h += '<section class="card"><h2>المصادر المعتمدة</h2><p class="small muted">يعتمد التطبيق على جهات رسمية وعلمية فقط. تاريخ المراجعة بجانب كل مصدر.</p><ul class="list">' +
+    }
+    if (tab === 'data') {
+      h += '<details class="card fold"><summary class="head"><h2>' + ic('book') + ' المصادر المعتمدة (' + Object.keys(W.SOURCES).length + ')</h2></summary><p class="small muted">يعتمد التطبيق على جهات رسمية وعلمية فقط. تاريخ المراجعة بجانب كل مصدر.</p><ul class="list">' +
         Object.keys(W.SOURCES).map(function (k) {
           var s = W.SOURCES[k];
           return '<li><div class="grow"><b>' + esc(s.org) + '</b><div><a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.title) + '</a></div><div class="small muted">رُوجع: ' + esc(s.checked) + '</div></div></li>';
-        }).join('') + '</ul></section>';
+        }).join('') + '</ul></details>';
     }
     return h + disclaimer();
   }
@@ -945,8 +948,8 @@
     if (st.autoNight) { var hr = new Date().getHours(); if (hr >= 22 || hr < 6) th = 'night'; }
     if (th) document.documentElement.setAttribute('data-theme', th); else document.documentElement.removeAttribute('data-theme');
     if (st.size) document.documentElement.setAttribute('data-size', st.size); else document.documentElement.removeAttribute('data-size');
-    var meta = document.querySelector('meta[name=theme-color]');
-    if (meta) meta.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#ffffff');
+    var surf = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || '#ffffff';
+    [].forEach.call(document.querySelectorAll('meta[name=theme-color]'), function (m) { m.setAttribute('content', surf); });
   }
   var formDirty = false;
   document.addEventListener('input', function (e) {

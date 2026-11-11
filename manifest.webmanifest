@@ -8,7 +8,7 @@
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f7f6",
-  "theme_color": "#1d6870",
+  "theme_color": "#f4f7f6",
   "icons": [
     {
       "src": "icons/icon-192.png",
@@ -79,6 +79,29 @@
           "sizes": "192x192"
         }
       ]
+    }
+  ],
+  "id": "/Baby-Plan/index.html",
+  "categories": [
+    "health",
+    "lifestyle",
+    "medical"
+  ],
+  "orientation": "portrait",
+  "screenshots": [
+    {
+      "src": "icons/screen-home.png",
+      "sizes": "780x1688",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "الصفحة الرئيسية: تسجيل سريع وأهم التنبيهات"
+    },
+    {
+      "src": "icons/screen-growth.png",
+      "sizes": "780x1688",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "منحنى النمو بمعايير منظمة الصحة العالمية"
     }
   ]
 }
