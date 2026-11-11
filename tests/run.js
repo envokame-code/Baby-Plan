@@ -162,4 +162,15 @@ test('mother dates follow conditions and child age', function () {
   assert.ok(E.motherDates({ conditions: [] }, ch).every(function (d) { return d.id !== 'gtt' && d.id !== 'bp'; }));
 });
 
+test('service worker caches every file the page loads', function () {
+  var sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+  var html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  var css = fs.readFileSync(path.join(__dirname, '..', 'css/styles.css'), 'utf8');
+  var need = [];
+  html.replace(/(?:src|href)="([^"#:]+)"/g, function (_, f) { need.push(f); });
+  css.replace(/url\('\.\.\/([^']+)'\)/g, function (_, f) { need.push(f); });
+  need.forEach(function (f) { assert.ok(sw.indexOf("'" + f + "'") >= 0, 'sw.js FILES is missing ' + f); });
+  assert.ok(/var CACHE = 'babyplan-v\d+'/.test(sw));
+});
+
 console.log('\n' + passed + ' tests passed');

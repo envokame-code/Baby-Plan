@@ -1141,6 +1141,7 @@
         openModal('<div class="head"><h2>ماذا تريدين تسجيله؟</h2><button type="button" class="x" data-action="close" aria-label="إغلاق">' + ic('x') + '</button></div><div class="quick">' +
           Object.keys(T).filter(function (k) { return k !== 'mom_bp' || hasHtn(); }).map(function (k) { return quickBtn(k); }).join('') + '</div>');
         break;
+      case 'reloadapp': location.reload(); break;
       case 'skip2': S.settings.needsProfile = false; save(); view = 'home'; render(); break;
       case 'complete': view = 'settings'; sub.settings = 'profile'; render(); window.scrollTo(0, 0); break;
       case 'homecard': { var k2 = el.getAttribute('data-k'); S.settings.homeCards = S.settings.homeCards || {}; S.settings.homeCards[k2] = S.settings.homeCards[k2] === false; save(); render(true); break; }
@@ -1282,7 +1283,15 @@
   document.addEventListener('visibilitychange', function () { if (!document.hidden && canAutoRender()) { S = W.Store.load(); applyDisplay(); render(true); } });
 
   if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+    var hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js').catch(function () { /* offline support optional */ });
+    /* نسخة جديدة نُزّلت في الخلفية: ستعمل عند الفتح القادم، أو فورًا بالضغط على "تحديث" */
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController) return;
+      var t = document.getElementById('toast');
+      t.hidden = false;
+      t.innerHTML = 'يتوفر تحديث جديد للتطبيق <button class="btn sm ghost" style="color:inherit;min-height:32px" data-action="reloadapp">تحديث الآن</button>';
+    });
   }
   applyDisplay();
   render();
