@@ -3,7 +3,7 @@
  * How updates work: the browser re-checks sw.js on each open (bypassing the HTTP cache). When sw.js
  * changed, the new worker downloads the whole new version in the background (install), then takes over;
  * the page shows "update ready" and the next open uses the new version. Pages never mix versions. */
-var CACHE = 'babyplan-v10';
+var CACHE = 'babyplan-v11';
 var FILES = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png',
